@@ -17,6 +17,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    demo_mode: bool = False
+
     @property
     def database_url(self) -> URL:
         return URL.create(
