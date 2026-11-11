@@ -34,12 +34,15 @@ Python, FastAPI, Pydantic v2, PostgreSQL, Qdrant, LangGraph, an MCP server, Groq
 
 ### Local services
 
-1. Create a `.env` file in the project root with `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD`. Keep this file local; `.env` is ignored by Git.
-2. Start PostgreSQL and Qdrant with `docker compose up -d`.
-3. Check service state with `docker compose ps`. PostgreSQL is published on `127.0.0.1:5433`; Qdrant is published on `127.0.0.1:6333` (HTTP) and `127.0.0.1:6334` (gRPC).
-4. Stop the services with `docker compose down`. Named volumes keep local database and vector data across container restarts.
+1. Install the locked Python dependencies with `uv sync`.
+2. Create a `.env` file in the project root with `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD`. Keep this file local; `.env` is ignored by Git.
+3. Start PostgreSQL and Qdrant with `docker compose up -d`.
+4. Check service state with `docker compose ps`. PostgreSQL is published on `127.0.0.1:5433`; Qdrant is published on `127.0.0.1:6333` (HTTP) and `127.0.0.1:6334` (gRPC).
+5. Start the API with `uv run fastapi dev src/clearance/main.py`. It listens on `http://127.0.0.1:8000` and provides interactive API docs at `/docs`.
+6. Check the health endpoint with `curl http://127.0.0.1:8000/health`; it returns `{"status":"ok"}`. Stop the API with `Ctrl+C`.
+7. Stop PostgreSQL and Qdrant with `docker compose down`. Named volumes keep local database and vector data across container restarts.
 
-The API and web interface are not implemented yet. Keep credentials in `.env`; never commit API keys or other secrets.
+The API currently has only a health endpoint; authentication, chat/RAG, and the web interface are not implemented yet. Keep credentials in `.env`; never commit API keys or other secrets.
 
 ## Evaluation results
 
