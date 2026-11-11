@@ -1,0 +1,29 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Python environments and generated files
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Frontend dependencies and generated output
+node_modules/
+frontend/dist/
+
+# Local databases, vector data, logs, and evaluation outputs
+*.sqlite3
+qdrant_storage/
+postgres_data/
+logs/
+reports/generated/
+
+# Personal learning map; keep the requested flow file local and out of Git
+PROJECT_FLOW.md
+
+.DS_Store
+.vscode/
