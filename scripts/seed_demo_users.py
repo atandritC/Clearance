@@ -1,8 +1,12 @@
 import asyncio
+from getpass import getpass
+
 from sqlalchemy import select
 
+from clearance.config import settings
 from clearance.database import SessionFactory, engine
 from clearance.models import User
+from clearance.security import hash_password
 
 DEMO_USERS = [
     {
@@ -51,18 +55,45 @@ DEMO_USERS = [
 
 
 async def main() -> None:
+    if not settings.demo_mode:
+        raise RuntimeError("Demo user setup is only available when DEMO_MODE=true.")
+
+    if settings.demo_user_password is None:
+        password = getpass("Password to use for all local demo users: ")
+        confirmation = getpass("Enter the same password again: ")
+    else:
+        password = settings.demo_user_password.get_secret_value()
+        confirmation = password
+
+    if len(password) < 12:
+        raise ValueError("The demo password must contain at least 12 characters.")
+    if password != confirmation:
+        raise ValueError("The passwords did not match.")
+
+    hashed_password = hash_password(password)
     async with SessionFactory() as session:
-        result = await session.scalars(select(User.email))
-        existing_emails = set(result.all())
-
-        new_users = [
-            User(**user) for user in DEMO_USERS if user["email"] not in existing_emails
-        ]
-
-        session.add_all(new_users)
+        result = await session.scalars(select(User))
+        existing_users = {user.email.lower(): user for user in result.all()}
+        added = 0
+        for demo_user in DEMO_USERS:
+            email = str(demo_user["email"]).lower()
+            existing_user = existing_users.get(email)
+            if existing_user is None:
+                session.add(
+                    User(
+                        **{
+                            **demo_user,
+                            "email": email,
+                            "hashed_password": hashed_password,
+                        }
+                    )
+                )
+                added += 1
+            else:
+                existing_user.hashed_password = hashed_password
         await session.commit()
 
-        print(f"Added {len(new_users)} demo users.")
+        print(f"Added {added} demo users and set passwords for {len(DEMO_USERS)} accounts.")
 
     await engine.dispose()
 

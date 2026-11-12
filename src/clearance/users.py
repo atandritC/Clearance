@@ -5,7 +5,7 @@ from clearance.models import User
 
 
 async def find_user_by_email(session: AsyncSession, email: str) -> User | None:
-    return await session.scalar(select(User).where(User.email == email))
+    return await session.scalar(select(User).where(User.email == email.lower()))
 
 
 async def find_user_by_id(session: AsyncSession, user_id: int) -> User | None:

@@ -16,6 +16,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(40), nullable=False)
     department: Mapped[str] = mapped_column(String(80), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
 
 
 class KnowledgeDocument(Base):

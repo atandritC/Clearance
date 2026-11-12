@@ -1,5 +1,5 @@
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import SecretStr
 from sqlalchemy.engine import URL
 from pathlib import Path
 
@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     )
 
     demo_mode: bool = False
+    jwt_secret_key: SecretStr
+    access_token_expire_minutes: int = 30
+    demo_user_password: SecretStr | None = None
 
     qdrant_url: str = "http://127.0.0.1:6333"
 
@@ -32,6 +35,13 @@ class Settings(BaseSettings):
     groq_max_completion_tokens: int = 1024
     groq_input_cost_per_million_tokens_usd: float = 0.075
     groq_output_cost_per_million_tokens_usd: float = 0.30
+
+    @field_validator("jwt_secret_key")
+    @classmethod
+    def require_long_jwt_secret(cls, value: SecretStr) -> SecretStr:
+        if len(value.get_secret_value()) < 32:
+            raise ValueError("JWT_SECRET_KEY must contain at least 32 characters.")
+        return value
 
     @property
     def database_url(self) -> URL:

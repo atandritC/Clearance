@@ -1,7 +1,7 @@
 [project]
 name = "clearance"
 version = "0.1.0"
-description = "Add your description here"
+description = "Permission-aware company knowledge assistant"
 readme = "README.md"
 authors = [
     { name = "Atandrit Chatterjee", email = "atandrit04chatterjee@gmail.com" }
@@ -13,8 +13,10 @@ dependencies = [
     "fastapi[standard]>=0.162.4",
     "greenlet>=3.5.6",
     "groq>=1.7.0",
+    "pwdlib[argon2]>=0.3.1",
     "pydantic>=2.14.3",
     "pydantic-settings>=2.16.2",
+    "pyjwt>=2.15.1",
     "qdrant-client[fastembed]>=1.20.0",
     "sqlalchemy>=2.1.8",
 ]
