@@ -21,9 +21,9 @@
 
 <div align="center">
 
-| &nbsp;01&nbsp; **The assistant** | &nbsp;02&nbsp; **Access model** | &nbsp;03&nbsp; **Quick start** | &nbsp;04&nbsp; **Evaluation** |
-|:---:|:---:|:---:|:---:|
-| [What it does](#the-assistant) | [How access works](#access-is-part-of-retrieval) | [Run with Docker](#run-the-demo-locally) | [What is measured](#evaluation) |
+| &nbsp;01&nbsp; **The assistant** | &nbsp;02&nbsp; **RAG pipeline** | &nbsp;03&nbsp; **Access model** | &nbsp;04&nbsp; **Quick start** | &nbsp;05&nbsp; **Evaluation** |
+|:---:|:---:|:---:|:---:|:---:|
+| [What it does](#the-assistant) | [How RAG works](#rag-pipeline) | [Access rules](#access-is-part-of-retrieval) | [Run with Docker](#run-the-demo-locally) | [What is measured](#evaluation) |
 
 </div>
 
@@ -39,6 +39,45 @@ Clearance is a learning project for permission-aware retrieval-augmented generat
 - **Evaluation scripts** — measure retrieval quality and access-boundary behavior on a synthetic question set; optional answer evaluation makes live Groq calls.
 
 > **Synthetic data only:** the company, policies, employees, and records in this repository are fictional. Do not add real company or personal documents.
+
+## RAG pipeline
+
+Clearance has two connected pipelines. During indexing, the synthetic Markdown corpus is parsed into versioned documents and chunks; metadata is stored in PostgreSQL, while FastEmbed vectors and searchable chunk payloads are stored in Qdrant. At question time, the API loads the employee’s trusted identity and grants, applies those access rules to vector search, then passes only authorized evidence to the assistant. The final response is checked for valid citations and tool results before it is returned.
+
+```mermaid
+flowchart TB
+  subgraph INDEX["1 · Index the knowledge base"]
+    MD["Synthetic Markdown documents"] --> PARSE["Parse content and version metadata"]
+    PARSE --> META["Document records and grants"]
+    META --> PG[("PostgreSQL")]
+    PARSE --> CHUNK["Split into searchable chunks"]
+    CHUNK --> EMBED["FastEmbed creates vectors"]
+    EMBED --> QDRANT[("Qdrant: vectors, text, and access metadata")]
+  end
+
+  subgraph ASK["2 · Retrieve and answer a question"]
+    EMP["Employee question"] --> API["Web app → FastAPI"]
+    API --> ID["Load active identity and grants"]
+    ID <--> PG
+    API --> QEMBED["FastEmbed embeds the question"]
+    ID --> FILTER["Build server-side access filter"]
+    QEMBED --> SEARCH["Search Qdrant"]
+    FILTER --> SEARCH
+    QDRANT --> SEARCH
+    SEARCH --> EVIDENCE["Authorized source passages"]
+    EVIDENCE --> GRAPH["LangGraph assistant"]
+    ID --> GRAPH
+    GRAPH --> ROUTE{"Need an HR or IT tool?"}
+    ROUTE -->|"Yes"| MCP["Permission-checked MCP tool"]
+    MCP <--> PG
+    MCP --> GRAPH
+    ROUTE -->|"No"| ANSWER["Groq generates a structured answer"]
+    GRAPH --> ANSWER
+    ANSWER --> CHECK["Validate citations and tool results"]
+    CHECK -->|"Supported"| CITED["Cited answer"]
+    CHECK -->|"Insufficient or invalid evidence"| ABSTAIN["Safe abstention"]
+  end
+```
 
 ## Access is part of retrieval
 
