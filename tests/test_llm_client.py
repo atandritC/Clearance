@@ -51,6 +51,7 @@ async def test_generate_text_returns_usage_and_estimated_cost(monkeypatch: pytes
     assert result.estimated_cost_usd == pytest.approx(0.0000135)
     create.assert_awaited_once()
     assert create.await_args.kwargs["stream"] is True
+    assert create.await_args.kwargs["extra_body"] == {"stream_options": {"include_usage": True}}
     close.assert_awaited_once()
 
 

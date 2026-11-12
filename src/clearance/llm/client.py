@@ -69,7 +69,7 @@ async def generate_completion(
             request_options["tool_choice"] = "auto"
 
         request_options["stream"] = True
-        request_options["stream_options"] = {"include_usage": True}
+        request_options["extra_body"] = {"stream_options": {"include_usage": True}}
         stream = await client.chat.completions.create(**request_options)
         content_parts: list[str] = []
         tool_call_parts: dict[int, dict[str, object]] = {}
