@@ -34,6 +34,13 @@ def score_retrieval_case(
 ) -> dict[str, Any]:
     found_versions = retrieved_versions(points)
     found_document_ids = {document_id for document_id, _ in found_versions}
+    ranked_document_ids = list(
+        dict.fromkeys(
+            str((point.payload or {}).get("document_id"))
+            for point in points
+            if (point.payload or {}).get("document_id") is not None
+        )
+    )
     expected_document_ids = set(case["expected_document_ids"])
     denied_document_ids = set(case["denied_document_ids"])
     granted_document_ids = {
@@ -46,12 +53,19 @@ def score_retrieval_case(
     }
     leaked_document_ids = found_document_ids & active_denials
     leaked_versions = found_versions & forbidden_versions
+    hit_ranks = [
+        ranked_document_ids.index(document_id) + 1
+        for document_id in expected_document_ids
+        if document_id in ranked_document_ids
+    ]
     return {
         "case_id": case["id"],
         "user_email": case["user_email"],
         "question": case["question"],
         "expected_document_ids": sorted(expected_document_ids),
         "retrieved_document_ids": sorted(found_document_ids),
+        "ranked_document_ids": ranked_document_ids,
+        "first_expected_document_rank": min(hit_ranks) if hit_ranks else None,
         "retrieved_versions": [list(version) for version in sorted(found_versions)],
         "hit_document_ids": sorted(found_document_ids & expected_document_ids),
         "active_denied_document_ids": sorted(active_denials),
@@ -65,6 +79,11 @@ def score_retrieval_case(
 def summarize_retrieval(results: list[dict[str, Any]]) -> dict[str, Any]:
     measured = [result for result in results if not result.get("skipped")]
     expected = [result for result in measured if result["expected_document_ids"]]
+    reciprocal_ranks = [
+        1 / result["first_expected_document_rank"]
+        for result in expected
+        if result["first_expected_document_rank"] is not None
+    ]
     total_expected = sum(len(result["expected_document_ids"]) for result in expected)
     total_retrieved = sum(len(result["retrieved_document_ids"]) for result in measured)
     total_hits = sum(len(result["hit_document_ids"]) for result in expected)
@@ -80,6 +99,9 @@ def summarize_retrieval(results: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "document_recall_at_k": (
             round(total_hits / total_expected, 4) if total_expected else None
+        ),
+        "mean_reciprocal_rank_at_k": (
+            round(sum(reciprocal_ranks) / len(expected), 4) if expected else None
         ),
         "expected_document_hit_rate": (
             round(

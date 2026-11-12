@@ -3,7 +3,7 @@
     "id": "company-handbook-cross-department",
     "user_email": "mikasa.ackerman@astervale.example",
     "question": "What is the standard process for reporting a workplace concern?",
-    "expected_document_ids": ["CO-002"],
+    "expected_document_ids": ["CO-001", "CO-002"],
     "denied_document_ids": [],
     "forbidden_versions": [],
     "expected_abstention": false

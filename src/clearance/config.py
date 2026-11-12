@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     demo_user_password: SecretStr | None = None
 
     qdrant_url: str = "http://127.0.0.1:6333"
+    qdrant_score_threshold: float = 0.68
 
     embedding_model: str = "BAAI/bge-small-en-v1.5"
 
@@ -41,6 +42,13 @@ class Settings(BaseSettings):
     def require_long_jwt_secret(cls, value: SecretStr) -> SecretStr:
         if len(value.get_secret_value()) < 32:
             raise ValueError("JWT_SECRET_KEY must contain at least 32 characters.")
+        return value
+
+    @field_validator("qdrant_score_threshold")
+    @classmethod
+    def require_valid_qdrant_score_threshold(cls, value: float) -> float:
+        if not 0 <= value <= 1:
+            raise ValueError("QDRANT_SCORE_THRESHOLD must be between 0 and 1.")
         return value
 
     @property

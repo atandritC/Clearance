@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import select
 
 from clearance.assistant.answer import answer_question
+from clearance.config import settings
 from clearance.database import SessionFactory, engine
 from clearance.evaluation.runner import (
     load_cases,
@@ -115,6 +116,7 @@ async def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
         "generated_at": datetime.now(UTC).isoformat(),
         "dataset": str(args.dataset.resolve()),
         "retrieval_limit": args.limit,
+        "retrieval_score_threshold": settings.qdrant_score_threshold,
         "answer_generation_enabled": args.answers,
         "access_boundary_passed": retrieval_metrics["access_leakage_case_count"] == 0,
         "retrieval_metrics": retrieval_metrics,

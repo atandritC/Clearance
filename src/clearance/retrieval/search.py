@@ -26,6 +26,7 @@ async def search_documents(
             collection_name=settings.qdrant_collection,
             query=question_vector,
             query_filter=access_filter,
+            score_threshold=settings.qdrant_score_threshold,
             limit=limit,
             with_payload=True,
         )
