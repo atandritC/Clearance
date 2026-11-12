@@ -3,7 +3,12 @@ from clearance.config import settings
 
 
 def create_qdrant_client() -> AsyncQdrantClient:
-    return AsyncQdrantClient(url=settings.qdrant_url)
+    api_key = (
+        settings.qdrant_api_key.get_secret_value()
+        if settings.qdrant_api_key is not None
+        else None
+    )
+    return AsyncQdrantClient(url=settings.qdrant_url, api_key=api_key)
 
 
 async def ensure_document_collection() -> None:

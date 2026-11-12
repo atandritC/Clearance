@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +29,14 @@ from clearance.llm.errors import LLMProviderError, LLMRateLimitError
 from clearance.retrieval.search import search_documents
 
 app = FastAPI(title="Clearance")
+
+if settings.allowed_frontend_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.allowed_frontend_origins,
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=["Authorization", "Content-Type", "X-Demo-User-ID"],
+    )
 
 
 @app.post("/auth/login", response_model=AccessTokenResponse)

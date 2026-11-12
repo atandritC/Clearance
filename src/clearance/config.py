@@ -11,6 +11,8 @@ class Settings(BaseSettings):
 
     postgres_host: str = "127.0.0.1"
     postgres_port: int = 5433
+    postgres_ssl: bool = False
+    postgres_pooler: bool = False
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[2] / ".env",
@@ -24,7 +26,10 @@ class Settings(BaseSettings):
     demo_user_password: SecretStr | None = None
 
     qdrant_url: str = "http://127.0.0.1:6333"
+    qdrant_api_key: SecretStr | None = None
     qdrant_score_threshold: float = 0.68
+
+    frontend_origins: str = ""
 
     embedding_model: str = "BAAI/bge-small-en-v1.5"
 
@@ -51,6 +56,17 @@ class Settings(BaseSettings):
             raise ValueError("QDRANT_SCORE_THRESHOLD must be between 0 and 1.")
         return value
 
+    @field_validator("qdrant_api_key", mode="before")
+    @classmethod
+    def empty_qdrant_key_is_missing(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        return value.strip()
+
+    @property
+    def allowed_frontend_origins(self) -> list[str]:
+        return [origin.strip() for origin in self.frontend_origins.split(",") if origin.strip()]
+
     @property
     def database_url(self) -> URL:
         return URL.create(
@@ -61,6 +77,7 @@ class Settings(BaseSettings):
             host=self.postgres_host,
             port=self.postgres_port,
             database=self.postgres_db,
+            query={"prepared_statement_cache_size": "0"} if self.postgres_pooler else {},
         )
 
 

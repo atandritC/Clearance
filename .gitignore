@@ -16,6 +16,7 @@ node_modules/
 frontend/dist/
 frontend/.vite/
 frontend/coverage/
+.vercel/
 
 # Local databases, vector data, logs, and evaluation outputs
 *.sqlite3

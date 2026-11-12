@@ -1,6 +1,9 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+const DEMO_MODE_ENABLED = import.meta.env.VITE_DEMO_MODE !== 'false'
+
 const startQuestions = [
   'How do I request time off?',
   'What should I do if my VPN is not connecting?',
@@ -29,7 +32,7 @@ function Icon({ name, size = 18, className = '' }) {
 }
 
 async function apiRequest(path, options = {}) {
-  const response = await fetch(path, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
   })
@@ -49,7 +52,7 @@ function App() {
   const [systemTheme, setSystemTheme] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
   const [users, setUsers] = useState([])
   const [identity, setIdentity] = useState(null)
-  const [mode, setMode] = useState('demo')
+  const [mode, setMode] = useState(DEMO_MODE_ENABLED ? 'demo' : 'auth')
   const [token, setToken] = useState('')
   const [view, setView] = useState('ask')
   const [adminDocument, setAdminDocument] = useState('HR-005')
@@ -88,6 +91,7 @@ function App() {
   }, [activeTheme, theme])
 
   useEffect(() => {
+    if (!DEMO_MODE_ENABLED) return
     let alive = true
     apiRequest('/demo/users').then((demoUsers) => {
       if (!alive) return
@@ -142,6 +146,10 @@ function App() {
     if (clean.length < 3 || busy) return
     if (mode === 'demo' && !identity) {
       setBannerError('The demo account list is unavailable. Start the API and try again.')
+      return
+    }
+    if (mode === 'auth' && !token) {
+      setLoginOpen(true)
       return
     }
     const submittedAt = new Date().toISOString()
@@ -209,8 +217,10 @@ function App() {
 
   function signOut() {
     setToken('')
-    setMode('demo')
-    setIdentity(users.find((user) => user.id === Number(localStorage.getItem('clearance-demo-user'))) || users[0] || null)
+    setMode(DEMO_MODE_ENABLED ? 'demo' : 'auth')
+    setIdentity(DEMO_MODE_ENABLED
+      ? users.find((user) => user.id === Number(localStorage.getItem('clearance-demo-user'))) || users[0] || null
+      : null)
     setMessages([])
     setView('ask')
     setMenuOpen(false)
@@ -284,13 +294,13 @@ function App() {
       <div className="sidebar-bottom">
         {mode === 'auth' && identity?.is_admin && <><div className="nav-label manage-label">Manage</div><nav className="manage-nav" aria-label="Administration"><NavButton active={view === 'admin'} icon="shield" onClick={() => { setView('admin'); setMobileNavOpen(false); setMenuOpen(false) }}>Admin console</NavButton></nav></>}
         <div className="privacy-note"><Icon name="shield" size={17} /><span>Your answers follow your account access.</span></div>
-        <button className="profile-button" onClick={() => setMenuOpen((open) => !open)} aria-expanded={menuOpen}>
-          <Avatar initials={initials} /><span className="profile-copy"><strong>{identity?.display_name || 'Connect to Clearance'}</strong><small>{identity?.department || 'Start the local API'}</small></span><Icon name="down" size={15} />
+        <button className="profile-button" onClick={() => identity || mode === 'demo' ? setMenuOpen((open) => !open) : setLoginOpen(true)} aria-expanded={menuOpen}>
+          <Avatar initials={initials} /><span className="profile-copy"><strong>{identity?.display_name || (mode === 'auth' ? 'Sign in to Clearance' : 'Connect to Clearance')}</strong><small>{identity?.department || (mode === 'auth' ? 'Use your account to continue' : 'Start the local API')}</small></span><Icon name="down" size={15} />
         </button>
         {menuOpen && <div className="profile-menu">
           <div className="menu-heading">{mode === 'demo' ? 'Viewing as' : 'Signed in as'}</div>
-          {mode === 'demo' ? <label className="select-wrap"><span className="sr-only">Choose demo account</span><select value={identity?.id || ''} onChange={(event) => chooseDemo(event.target.value)}>{users.map((user) => <option key={user.id} value={user.id}>{user.display_name} · {user.role.replaceAll('_', ' ')}</option>)}</select><Icon name="down" size={15} /></label> : <p className="signed-in-label">{identity?.display_name}<small>{identity?.role?.replaceAll('_', ' ')}</small></p>}
-          {mode === 'demo' ? <button className="menu-action" onClick={() => { setLoginOpen(true); setMenuOpen(false) }}>Sign in with a password <Icon name="chevron" size={15} /></button> : <button className="menu-action" onClick={signOut}><Icon name="logout" size={15} /> Sign out</button>}
+          {mode === 'demo' ? <label className="select-wrap"><span className="sr-only">Choose demo account</span><select value={identity?.id || ''} onChange={(event) => chooseDemo(event.target.value)}>{users.map((user) => <option key={user.id} value={user.id}>{user.display_name} · {user.role.replaceAll('_', ' ')}</option>)}</select><Icon name="down" size={15} /></label> : identity ? <p className="signed-in-label">{identity.display_name}<small>{identity.role?.replaceAll('_', ' ')}</small></p> : <p className="signed-in-label">Sign in to continue</p>}
+          {mode === 'demo' ? <button className="menu-action" onClick={() => { setLoginOpen(true); setMenuOpen(false) }}>Sign in with a password <Icon name="chevron" size={15} /></button> : identity ? <button className="menu-action" onClick={signOut}><Icon name="logout" size={15} /> Sign out</button> : <button className="menu-action" onClick={() => { setLoginOpen(true); setMenuOpen(false) }}>Sign in with a password <Icon name="chevron" size={15} /></button>}
         </div>}
       </div>
     </aside>

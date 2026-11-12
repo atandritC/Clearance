@@ -23,7 +23,7 @@ The project is built in small, verified steps. This README will be updated at ea
 
 ## Stack
 
-Python, FastAPI, Pydantic v2, SQLAlchemy, Alembic, PostgreSQL, Qdrant, FastEmbed, LangGraph, an MCP server, Groq, React + Vite, Nginx, Docker Compose, and EC2 deployment. Package versions and provider limits will be checked against current official documentation when each installation or integration step begins.
+Python, FastAPI, Pydantic v2, SQLAlchemy, Alembic, PostgreSQL, Qdrant, FastEmbed, LangGraph, an MCP server, Groq, React + Vite, Nginx, Docker Compose, and planned Vercel + Neon + Qdrant Cloud hosting. Package versions and provider limits will be checked against current official documentation when each installation or integration step begins.
 
 ## Setup and run
 
@@ -80,6 +80,19 @@ If you previously started the full Docker app, stop its API and frontend contain
 
 The table descriptions are in `src/clearance/models.py`, and Alembic migrations under `migrations/` keep database layout changes repeatable. PostgreSQL stores accounts, document details, grants, synthetic leave balances, and IT tickets; Qdrant stores searchable text chunks, vectors, and search metadata. Passwords are stored as Argon2 hashes. `POST /auth/login` issues a short-lived signed token; protected routes check that token and load the current active user record from PostgreSQL. Retrieval allows active company documents, same-department documents, and active restricted versions explicitly granted to that user. It also filters out search matches below `QDRANT_SCORE_THRESHOLD`. Admin-only endpoints can list, add, and revoke grants; grants for old document versions do not expose superseded content. Both ask routes use a LangGraph workflow: it searches only permitted documents, makes employee identity available to MCP tools only from the authenticated server-side user, and returns structured Groq answers with citations checked against retrieved sources. Tool results are checked against the tools actually called. Leave balances are limited to the employee, HR managers, and administrators; ticket lists are limited to the signed-in employee. The ticket creation tool is only registered when `confirm_actions` is true. The React interface provides desktop and mobile layouts, light and dark themes, demo identity switching, password sign-in, source details, session request history, and admin document-grant controls. The `X-Demo-User-ID` header remains a local learning shortcut. Keep credentials in `.env`; never commit API keys or other secrets.
 
+## Hosted preview (Vercel, Neon, and Qdrant Cloud)
+
+The repository is prepared for a hosted preview, but no cloud services are created by these code changes. Keep the corpus synthetic: `DEMO_MODE=true` lets visitors switch between fictional accounts and is not suitable for real company data.
+
+1. Create a Neon PostgreSQL database and a Qdrant Cloud cluster. Keep their connection details and API keys private.
+2. Import this Git repository into Vercel twice. For the API project, use the repository root. For the website project, set the root directory to `frontend`.
+3. In the API project's Vercel environment variables, set `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST` (the Neon pooled endpoint host, with `-pooler` in its name), `POSTGRES_PORT=5432`, `POSTGRES_SSL=true`, `POSTGRES_POOLER=true`, `GROQ_API_KEY`, `JWT_SECRET_KEY` (a random value with at least 32 characters), `QDRANT_URL` (the cluster URL), `QDRANT_API_KEY`, `DEMO_MODE=true`, and `FRONTEND_ORIGINS` (the exact website origin, including `https://` and no trailing slash). Keep the remaining model and collection settings at their defaults unless you changed them.
+4. In the website project's Vercel environment variables, set `VITE_API_BASE_URL` to the API project's public origin (for example, `https://your-api.vercel.app`) and `VITE_DEMO_MODE=true`. These `VITE_` values are included in public browser code; never put secrets in them.
+5. Before the first deployment can answer questions, point your local shell at the hosted Neon and Qdrant services using the same database settings, but use Neon's direct (non-pooled) endpoint and set `POSTGRES_POOLER=false` while running database setup commands. Then run `uv run alembic upgrade head`, `uv run python scripts/seed_demo_users.py`, `uv run python scripts/import_knowledge_metadata.py`, `uv run python scripts/create_qdrant_collection.py`, and `uv run python scripts/index_knowledge_base.py`. The seed script asks for a shared password for the fictional sign-in accounts. Run these commands only against the intended hosted preview database and vector cluster.
+6. Deploy both Vercel projects, then check `https://your-api.vercel.app/health`, `/ready`, and `/docs`. Open the website and try a question. If browser requests are blocked, confirm that `FRONTEND_ORIGINS` exactly matches the website's deployed origin, then redeploy the API.
+
+The API entry point is root `index.py`; `vercel.json` sets its function time limit. The frontend builds separately as a Vite site. FastEmbed downloads its model on first use into temporary function storage, so the first hosted search can take longer and the cache may need to be downloaded again by a fresh function instance. Vercel's Python runtime currently has a 500 MB writable `/tmp` area; check cold-start behavior and deployment limits with the actual chosen plan before treating this as a production service. The local Docker Compose path remains available for development.
+
 ## Evaluation results
 
 The versioned question set is `evaluation/golden_questions.json`. After the database, demo users, document metadata, and Qdrant index are ready, run `uv run python scripts/run_evaluation.py --output reports/generated/evaluation.json` for retrieval and access-boundary measurements. It reports document precision and recall at top-k, first relevant document rank, and access leakage. Add `--answers` to make live Groq calls and measure abstention accuracy and citation overlap. Grant-dependent cases are skipped unless the user has the required active document grant. Reports are local and ignored by Git. No results are claimed until the runner is used against the local services. Citation overlap does not measure whether the answer's meaning is fully supported; semantic faithfulness still needs human review.
@@ -101,10 +114,8 @@ The Groq baseline makes two sample calls at temperatures 0.0 and 0.7. On the dev
 
 ```mermaid
 flowchart LR
-  U[Desktop or mobile browser] --> N[Nginx frontend container]
-  N -->|static React assets| U
-  U -->|demo, login, ask, admin grants| N
-  N -->|API path forwarding| A[FastAPI container]
+  U[Desktop or mobile browser] --> F[Vercel React site or local Nginx]
+  F -->|same-origin proxy locally or CORS hosted| A[FastAPI on Vercel or Docker]
   A --> AU[Authenticated user and access rules]
   AU --> G[LangGraph answer flow]
   G --> Q[Qdrant permission-filtered search]
@@ -115,5 +126,4 @@ flowchart LR
   Q --> G
   M --> G
   G -->|checked answer, sources, tool results| A
-  A --> F
 ```
