@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import SecretStr
 from sqlalchemy.engine import URL
 from pathlib import Path
 
@@ -24,6 +25,13 @@ class Settings(BaseSettings):
     embedding_model: str = "BAAI/bge-small-en-v1.5"
 
     qdrant_collection: str = "clearance_documents"
+
+    groq_api_key: SecretStr
+    groq_model: str = "openai/gpt-oss-20b"
+    groq_temperature: float = 0.2
+    groq_max_completion_tokens: int = 1024
+    groq_input_cost_per_million_tokens_usd: float = 0.075
+    groq_output_cost_per_million_tokens_usd: float = 0.30
 
     @property
     def database_url(self) -> URL:

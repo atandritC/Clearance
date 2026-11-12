@@ -30,30 +30,31 @@ Python, FastAPI, Pydantic v2, SQLAlchemy, Alembic, PostgreSQL, Qdrant, FastEmbed
 
 - Python 3.14.10 and `uv`
 - Docker Desktop with Docker Compose
-- A Groq API key for the later model integration steps
+- A Groq API key
 
 ### Local services
 
 1. Install the locked Python dependencies with `uv sync`.
-2. Create a `.env` file in the project root with `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD`. Keep this file local; `.env` is ignored by Git.
+2. Copy `.env.example` to `.env`, then set the PostgreSQL password and your Groq API key. Keep `.env` local; it is ignored by Git.
 3. Start PostgreSQL and Qdrant with `docker compose up -d`.
 4. Apply the database migrations with `uv run alembic upgrade head`. This creates the `users` and `knowledge_documents` tables.
 5. Add the fictional local users with `uv run python scripts/seed_demo_users.py`. It skips users that already exist.
 6. Import document details into PostgreSQL with `uv run python scripts/import_knowledge_metadata.py`. The current corpus has 41 document versions.
 7. Create the Qdrant collection with `uv run python scripts/create_qdrant_collection.py`.
 8. Index the source corpus with `uv run python scripts/index_knowledge_base.py`. FastEmbed creates vectors locally; the first run downloads its model. At this checkpoint, the corpus produces 44 searchable chunks.
-9. Run `uv run pytest -q` to check that search excludes other-department, restricted, and superseded documents.
+9. Run `uv run pytest -q` to check access filtering and Groq response and usage handling.
 10. Check service state with `docker compose ps`. PostgreSQL is published on `127.0.0.1:5433`; Qdrant is published on `127.0.0.1:6333` (HTTP) and `127.0.0.1:6334` (gRPC).
 11. Start the API with `uv run fastapi dev src/clearance/main.py`. It listens on `http://127.0.0.1:8000` and provides interactive API docs at `/docs`.
 12. Check `curl http://127.0.0.1:8000/health` and `curl http://127.0.0.1:8000/ready`. The first checks that the API responds; the second also checks its Postgres connection.
-13. In demo mode, `GET /demo/users` lists the fictional users, `GET /demo/whoami` accepts the `X-Demo-User-ID` header to select one, and `GET /demo/search` searches the indexed documents for that user. These routes are a local learning shortcut, not production sign-in. Stop the API with `Ctrl+C`.
-14. Stop PostgreSQL and Qdrant with `docker compose down`. Named volumes keep local database and vector data across container restarts.
+13. In demo mode, `GET /demo/users` lists the fictional users, `GET /demo/whoami` accepts the `X-Demo-User-ID` header to select one, and `GET /demo/search` searches the indexed documents for that user. These routes are a local learning shortcut, not production sign-in.
+14. Run `uv run python scripts/groq_baseline.py` to make two short Groq calls and view their answers, token counts, response time, and estimated cost. The results are sample observations, not an answer-quality evaluation.
+15. Stop the API with `Ctrl+C`, then stop PostgreSQL and Qdrant with `docker compose down`. Named volumes keep local database and vector data across container restarts.
 
-The `User` and `KnowledgeDocument` tables are described in `src/clearance/models.py`, and Alembic migration files under `migrations/` keep database layout changes repeatable. PostgreSQL stores document details and versions; Qdrant stores searchable text chunks, their vectors, and search metadata. The demo search route filters to active company documents and documents from the selected user's department; restricted documents remain excluded until explicit grants are implemented. Demo identity selection is a local learning shortcut, not production sign-in. Production authentication, answer generation, tools, and the web interface are not implemented yet. Keep credentials in `.env`; never commit API keys or other secrets.
+The `User` and `KnowledgeDocument` tables are described in `src/clearance/models.py`, and Alembic migration files under `migrations/` keep database layout changes repeatable. PostgreSQL stores document details and versions; Qdrant stores searchable text chunks, their vectors, and search metadata. The demo search route filters to active company documents and documents from the selected user's department; restricted documents remain excluded until explicit grants are implemented. Demo identity selection is a local learning shortcut, not production sign-in. A standalone Groq baseline checks model connectivity and usage tracking; the API does not yet use the model to answer questions. Production authentication, answer generation in the API, tools, and the web interface are not implemented yet. Keep credentials in `.env`; never commit API keys or other secrets.
 
 ## Evaluation results
 
-No measurements are reported yet. At the evaluation checkpoint, record real values with their test-set size and method:
+No project evaluation measurements are reported yet. At the evaluation checkpoint, record real values with their test-set size and method:
 
 | Metric | Result | Dataset / method |
 |---|---:|---|
@@ -63,6 +64,8 @@ No measurements are reported yet. At the evaluation checkpoint, record real valu
 | Leakage rate | Not measured | Pending |
 | p50 / p95 latency | Not measured | Pending |
 | Cost per question | Not measured | Pending |
+
+The Groq baseline makes two sample calls at temperatures 0.0 and 0.7. On the development run, both returned the instructed safe fallback for a question with no source text. Their estimated costs were about $0.000038 and $0.000035. This is only a connection and usage-accounting check, not an answer-quality evaluation.
 
 ## Architecture
 
