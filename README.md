@@ -23,7 +23,7 @@ The project is built in small, verified steps. This README will be updated at ea
 
 ## Stack
 
-Python, FastAPI, Pydantic v2, SQLAlchemy, Alembic, PostgreSQL, Qdrant, FastEmbed, LangGraph, an MCP server, Groq, React + Vite, Nginx, Docker Compose, and planned Vercel + Neon + Qdrant Cloud hosting. Package versions and provider limits will be checked against current official documentation when each installation or integration step begins.
+Python, FastAPI, Pydantic v2, SQLAlchemy, Alembic, PostgreSQL, Qdrant, FastEmbed, LangGraph, an MCP server, Groq, React + Vite, Nginx, Docker Compose, Vercel, Neon, and Qdrant Cloud.
 
 ## Setup and run
 
@@ -80,18 +80,34 @@ If you previously started the full Docker app, stop its API and frontend contain
 
 The table descriptions are in `src/clearance/models.py`, and Alembic migrations under `migrations/` keep database layout changes repeatable. PostgreSQL stores accounts, document details, grants, synthetic leave balances, and IT tickets; Qdrant stores searchable text chunks, vectors, and search metadata. Passwords are stored as Argon2 hashes. `POST /auth/login` issues a short-lived signed token; protected routes check that token and load the current active user record from PostgreSQL. Retrieval allows active company documents, same-department documents, and active restricted versions explicitly granted to that user. It also filters out search matches below `QDRANT_SCORE_THRESHOLD`. Admin-only endpoints can list, add, and revoke grants; grants for old document versions do not expose superseded content. Both ask routes use a LangGraph workflow: it searches only permitted documents, makes employee identity available to MCP tools only from the authenticated server-side user, and returns structured Groq answers with citations checked against retrieved sources. Groq responses stream to the API, which rebuilds the complete structured answer before returning it to the browser. Tool results are checked against the tools actually called. Leave balances are limited to the employee, HR managers, and administrators; ticket lists are limited to the signed-in employee. The ticket creation tool is only registered when `confirm_actions` is true. The React interface provides desktop and mobile layouts, light and dark themes, demo identity switching, password sign-in, source details, session request history, and admin document-grant controls. The `X-Demo-User-ID` header remains a local learning shortcut. Keep credentials in `.env`; never commit API keys or other secrets.
 
-## Hosted preview (Vercel, Neon, and Qdrant Cloud)
+## Deployed preview
 
-The repository is prepared for a hosted preview, but no cloud services are created by these code changes. Keep the corpus synthetic: `DEMO_MODE=true` lets visitors switch between fictional accounts and is not suitable for real company data.
+The public synthetic demo is deployed with [the React frontend](https://clearance-theta-three.vercel.app/) and [the FastAPI service](https://clearance-api-nine.vercel.app/). The API runs on Vercel, PostgreSQL is hosted by Neon in Singapore, and vectors are stored in Qdrant Cloud in São Paulo. The public demo uses only the fictional corpus and demo accounts; do not upload real company or personal data.
 
-1. Create a Neon PostgreSQL database and a Qdrant Cloud cluster. Keep their connection details and API keys private.
-2. Import this Git repository into Vercel twice. For the API project, use the repository root. For the website project, set the root directory to `frontend`.
-3. In the API project's Vercel environment variables, set `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST` (the Neon pooled endpoint host, with `-pooler` in its name), `POSTGRES_PORT=5432`, `POSTGRES_SSL=true`, `POSTGRES_POOLER=true`, `GROQ_API_KEY`, `JWT_SECRET_KEY` (a random value with at least 32 characters), `QDRANT_URL` (the cluster URL), `QDRANT_API_KEY`, `DEMO_MODE=true`, and `FRONTEND_ORIGINS` (the exact website origin, including `https://` and no trailing slash). Keep the remaining model and collection settings at their defaults unless you changed them.
-4. In the website project's Vercel environment variables, set `VITE_API_BASE_URL` to the API project's public origin (for example, `https://your-api.vercel.app`) and `VITE_DEMO_MODE=true`. These `VITE_` values are included in public browser code; never put secrets in them.
-5. Before the first deployment can answer questions, point your local shell at the hosted Neon and Qdrant services using the same database settings, but use Neon's direct (non-pooled) endpoint and set `POSTGRES_POOLER=false` while running database setup commands. Then run `uv run alembic upgrade head`, `uv run python scripts/seed_demo_users.py`, `uv run python scripts/import_knowledge_metadata.py`, `uv run python scripts/create_qdrant_collection.py`, and `uv run python scripts/index_knowledge_base.py`. The collection setup also creates the Qdrant payload indexes used for safe user and document filtering. The seed script asks for a shared password for the fictional sign-in accounts. Run these commands only against the intended hosted preview database and vector cluster.
-6. Deploy both Vercel projects, then check `https://your-api.vercel.app/health`, `/ready`, and `/docs`. Open the website and try a question. If browser requests are blocked, confirm that `FRONTEND_ORIGINS` exactly matches the website's deployed origin, then redeploy the API.
+### Recreate the hosted setup
 
-The API entry point is root `index.py`; it adds the `src/` folder to Python's import path, and `vercel.json` includes that folder in the function bundle and sets its time limit. The frontend builds separately as a Vite site. FastEmbed and Hugging Face store downloaded model files under `/tmp`, because Vercel's deployed files are read-only and `/tmp` is its writable scratch area. A fresh serverless instance may still need to download the model again, so its first search can take longer. The local Docker Compose path remains available for development.
+1. Create a Neon PostgreSQL project and a Qdrant Cloud cluster. Keep database credentials, the Qdrant API key, the Groq API key, and the JWT secret private.
+2. Connect the repository to Vercel as two projects: set the API project's root directory to the repository root and the website project's root directory to `frontend`. The API uses the root `index.py` entry point and `vercel.json`; the website builds as a Vite app.
+3. Add the API environment variables in Vercel: `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT=5432`, `POSTGRES_SSL=true`, `POSTGRES_POOLER=true`, `GROQ_API_KEY`, `JWT_SECRET_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`, `DEMO_MODE=true`, and `FRONTEND_ORIGINS`. Set `FRONTEND_ORIGINS` to the exact website origin with `https://` and no trailing slash. The deployed API uses Neon's pooled endpoint.
+4. Add `VITE_API_BASE_URL` and `VITE_DEMO_MODE=true` to the website project's Vercel environment. Set the API URL to the API project's public origin. Values beginning with `VITE_` are visible in browser code and must not contain secrets.
+5. For one-time hosted database and vector setup, use a private local environment file such as `.env.hosted` (ignored by Git). Point it to Neon's **direct** endpoint and set `POSTGRES_POOLER=false`; use the Qdrant Cloud endpoint and key. From the repository root, load that file into the current shell, then run the setup commands:
+
+   ```sh
+   set -a
+   source .env.hosted
+   set +a
+   uv run alembic upgrade head
+   uv run python scripts/seed_demo_users.py
+   uv run python scripts/import_knowledge_metadata.py
+   uv run python scripts/create_qdrant_collection.py
+   uv run python scripts/index_knowledge_base.py
+   ```
+
+   The setup creates the PostgreSQL tables and six fictional demo accounts, imports document metadata, creates the `clearance_documents` Qdrant collection and its payload indexes, and uploads the embedded corpus. At this checkpoint, the corpus contains 41 document versions and 44 searchable chunks. The runtime Vercel API switches to Neon's pooled connection settings.
+6. Push the deployment commit to the connected branch and wait for both Vercel projects to report **Ready**. If environment variables change, redeploy the affected project. The API's `FRONTEND_ORIGINS` must match the website origin exactly.
+7. Verify the API at `/health`, `/ready`, and `/demo/users`, then ask a question in the website as an authorized fictional user. A safe abstention is expected when the selected user's access does not include a relevant source.
+
+Vercel's deployed files are read-only, so the API puts FastEmbed and Hugging Face model caches under `/tmp`. A fresh serverless instance can download the model again, making its first search slower. The local Docker Compose setup remains available for development and runs PostgreSQL, Qdrant, the API, and the frontend together.
 
 ## Evaluation results
 
@@ -110,20 +126,43 @@ Record real values with their test-set size and method:
 
 The Groq baseline makes two sample calls at temperatures 0.0 and 0.7. On the development run, both returned the instructed safe fallback for a question with no source text. Their estimated costs were about $0.000038 and $0.000035. A separate live check confirmed that the configured model accepts the strict structured response schema and returns the requested answer and citation ID for supplied synthetic evidence. These checks confirm connectivity and response formatting; they are not an answer-quality evaluation. The retrieval result above is a small smoke evaluation, not evidence of production quality or zero leakage risk.
 
-## Architecture
+## RAG request and indexing flow
+
+Clearance has two RAG paths. During indexing, it reads the synthetic Markdown corpus, stores document/version metadata in PostgreSQL, splits document text into chunks, embeds each chunk with FastEmbed, and stores its vector, text, and access metadata in Qdrant. During a question, the API loads the user's identity and grants from PostgreSQL, embeds the question, and searches Qdrant with a server-built filter for active company, same-department, and explicitly granted content. LangGraph can use permission-checked HR or IT tools. Groq streams a structured draft back to the API; the API validates its citations and tool-result IDs and returns the answer or a safe abstention.
 
 ```mermaid
-flowchart LR
-  U[Desktop or mobile browser] --> F[Vercel React site or local Nginx]
-  F -->|same-origin proxy locally or CORS hosted| A[FastAPI on Vercel or Docker]
-  A --> AU[Authenticated user and access rules]
-  AU --> G[LangGraph answer flow]
-  G --> Q[Qdrant permission-filtered search]
-  G --> M[Groq tool choice and answer]
-  G --> T[Per-request MCP HR and IT tools]
-  T --> P[(PostgreSQL accounts, balances, tickets)]
-  A --> P
-  Q --> G
-  M --> G
-  G -->|checked answer, sources, tool results| A
+flowchart TB
+  subgraph Indexing[Knowledge base indexing]
+    MD["Synthetic Markdown corpus"] --> PARSE["Parse documents and metadata"]
+    PARSE -->|"Document versions and ownership"| PG[("PostgreSQL")]
+    PARSE --> CHUNK["Split text into searchable chunks"]
+    CHUNK --> EMBED["FastEmbed creates vectors"]
+    EMBED --> QDRANT[("Qdrant: vectors, text, and access metadata")]
+  end
+
+  subgraph Asking[Permission-aware question answering]
+    USER["Employee question"] --> API["React UI → FastAPI"]
+    API --> IDENTITY["Load trusted user and active grants"]
+    IDENTITY <--> PG
+    API --> QEMBED["Embed question with FastEmbed"]
+    IDENTITY --> FILTER["Build active, company, department, and grant filter"]
+    QEMBED --> SEARCH["Search Qdrant for top matches"]
+    FILTER --> SEARCH
+    QDRANT --> SEARCH
+    SEARCH --> EVIDENCE["Authorized source passages"]
+    IDENTITY --> GRAPH["LangGraph workflow"]
+    EVIDENCE --> GRAPH
+    GRAPH --> ROUTER["Groq chooses whether a tool is needed"]
+    ROUTER -->|"HR or IT request"| MCP["Permission-checked MCP tool"]
+    MCP <--> PG
+    MCP --> TOOLRESULT["Trusted tool result"]
+    TOOLRESULT --> GRAPH
+    ROUTER --> COMPOSE["Groq streams a structured answer"]
+    GRAPH --> COMPOSE
+    COMPOSE --> VALIDATE["Validate citations and tool-result IDs"]
+    VALIDATE -->|"Supported"| ANSWER["Answer with citations"]
+    VALIDATE -->|"Missing or invalid evidence"| ABSTAIN["Safe abstention"]
+    ANSWER --> API
+    ABSTAIN --> API
+  end
 ```
