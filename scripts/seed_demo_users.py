@@ -50,6 +50,7 @@ DEMO_USERS = [
         "role": "executive",
         "department": "Executive Office",
         "is_active": True,
+        "is_admin": True,
     },
 ]
 
@@ -78,19 +79,21 @@ async def main() -> None:
         for demo_user in DEMO_USERS:
             email = str(demo_user["email"]).lower()
             existing_user = existing_users.get(email)
+            account_data = {
+                **demo_user,
+                "email": email,
+                "hashed_password": hashed_password,
+            }
             if existing_user is None:
-                session.add(
-                    User(
-                        **{
-                            **demo_user,
-                            "email": email,
-                            "hashed_password": hashed_password,
-                        }
-                    )
-                )
+                session.add(User(**account_data))
                 added += 1
             else:
                 existing_user.hashed_password = hashed_password
+                existing_user.display_name = str(account_data["display_name"])
+                existing_user.role = str(account_data["role"])
+                existing_user.department = str(account_data["department"])
+                existing_user.is_active = bool(account_data["is_active"])
+                existing_user.is_admin = bool(account_data.get("is_admin", False))
         await session.commit()
 
         print(f"Added {added} demo users and set passwords for {len(DEMO_USERS)} accounts.")

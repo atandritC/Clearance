@@ -4,7 +4,7 @@ from clearance.models import User
 from clearance.retrieval.filters import build_document_filter
 
 
-def test_search_filter_only_allows_active_company_and_same_department_documents():
+def test_search_filter_allows_only_company_department_and_granted_versions():
     client = QdrantClient(":memory:")
 
     try:
@@ -68,6 +68,28 @@ def test_search_filter_only_allows_active_company_and_same_department_documents(
                         "status": "superseded",
                     },
                 ),
+                models.PointStruct(
+                    id=6,
+                    vector=[0.5, 0.5],
+                    payload={
+                        "document_id": "HR-005",
+                        "version": "1.0",
+                        "department": "People Operations",
+                        "access_level": "restricted",
+                        "status": "active",
+                    },
+                ),
+                models.PointStruct(
+                    id=7,
+                    vector=[0.4, 0.6],
+                    payload={
+                        "document_id": "HR-006",
+                        "version": "1.1",
+                        "department": "People Operations",
+                        "access_level": "restricted",
+                        "status": "active",
+                    },
+                ),
             ],
         )
 
@@ -89,5 +111,15 @@ def test_search_filter_only_allows_active_company_and_same_department_documents(
         )
 
         assert {point.id for point in result.points} == {1, 2}
+
+        granted_result = client.query_points(
+            collection_name="access-check",
+            query=[1.0, 0.0],
+            query_filter=build_document_filter(user, {("HR-005", "1.0")}),
+            limit=10,
+            with_payload=True,
+        )
+
+        assert {point.id for point in granted_result.points} == {1, 2, 6}
     finally:
         client.close()

@@ -55,3 +55,13 @@ async def test_inactive_user_cannot_use_valid_token(monkeypatch: pytest.MonkeyPa
         await auth.get_current_user(credentials, object())
 
     assert error.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_non_admin_user_cannot_manage_document_grants() -> None:
+    user = make_user()
+
+    with pytest.raises(HTTPException) as error:
+        await auth.get_current_admin_user(user)
+
+    assert error.value.status_code == 403

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from clearance.config import settings
 from clearance.database import get_db_session
 from clearance.models import User
+from clearance.models import KnowledgeDocument, KnowledgeDocumentGrant
 from clearance.security import create_access_token, verify_password
 from clearance.users import find_user_by_email
 from clearance.schemas import (
@@ -13,12 +14,14 @@ from clearance.schemas import (
     DemoUserResponse,
     RetrievedChunkResponse,
 )
-from clearance.auth import get_current_demo_user, get_current_user
+from clearance.auth import get_current_admin_user, get_current_demo_user, get_current_user
 from clearance.assistant.answer import answer_question
 from clearance.assistant.schemas import (
     AccessTokenResponse,
     AssistantAnswerRequest,
     AssistantAnswerResponse,
+    DocumentGrantCreateRequest,
+    DocumentGrantResponse,
     LoginRequest,
 )
 from clearance.llm.errors import LLMProviderError, LLMRateLimitError
@@ -121,8 +124,9 @@ async def list_demo_users(
 async def demo_search(
     question: str = Query(min_length=3, max_length=500),
     user: User = Depends(get_current_demo_user),
+    session: AsyncSession = Depends(get_db_session),
 ) -> DemoSearchResponse:
-    points = await search_documents(question, user)
+    points = await search_documents(question, user, session)
 
     return DemoSearchResponse(
         question=question,
@@ -140,21 +144,27 @@ async def demo_search(
 async def demo_ask(
     request: AssistantAnswerRequest,
     user: User = Depends(get_current_demo_user),
+    session: AsyncSession = Depends(get_db_session),
 ) -> AssistantAnswerResponse:
-    return await run_ask(request.question, user)
+    return await run_ask(request.question, user, session)
 
 
 @app.post("/api/ask", response_model=AssistantAnswerResponse)
 async def authenticated_ask(
     request: AssistantAnswerRequest,
     user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
 ) -> AssistantAnswerResponse:
-    return await run_ask(request.question, user)
+    return await run_ask(request.question, user, session)
 
 
-async def run_ask(question: str, user: User) -> AssistantAnswerResponse:
+async def run_ask(
+    question: str,
+    user: User,
+    session: AsyncSession,
+) -> AssistantAnswerResponse:
     try:
-        return await answer_question(question, user)
+        return await answer_question(question, user, session)
     except LLMRateLimitError as error:
         headers = {"Retry-After": error.retry_after} if error.retry_after else None
         raise HTTPException(
@@ -167,3 +177,135 @@ async def run_ask(question: str, user: User) -> AssistantAnswerResponse:
             status_code=502,
             detail="The answer service could not complete the request.",
         ) from error
+
+
+@app.get(
+    "/api/admin/documents/{document_id}/versions/{version}/grants",
+    response_model=list[DocumentGrantResponse],
+)
+async def list_document_grants(
+    document_id: str,
+    version: str,
+    session: AsyncSession = Depends(get_db_session),
+    admin: User = Depends(get_current_admin_user),
+) -> list[DocumentGrantResponse]:
+    document = await find_document_version(session, document_id, version)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document version not found")
+    result = await session.scalars(
+        select(KnowledgeDocumentGrant)
+        .where(KnowledgeDocumentGrant.knowledge_document_id == document.id)
+        .order_by(KnowledgeDocumentGrant.user_id)
+    )
+    return [
+        DocumentGrantResponse(
+            document_id=document.document_id,
+            version=document.version,
+            user_id=grant.user_id,
+            granted_by_user_id=grant.granted_by_user_id,
+            granted_at=grant.granted_at,
+        )
+        for grant in result.all()
+    ]
+
+
+@app.post(
+    "/api/admin/documents/{document_id}/versions/{version}/grants",
+    response_model=DocumentGrantResponse,
+)
+async def create_document_grant(
+    document_id: str,
+    version: str,
+    request: DocumentGrantCreateRequest,
+    session: AsyncSession = Depends(get_db_session),
+    admin: User = Depends(get_current_admin_user),
+) -> DocumentGrantResponse:
+    document = await find_active_document(session, document_id, version)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Active document version not found")
+    if document.access_level != "restricted":
+        raise HTTPException(
+            status_code=400,
+            detail="Per-user grants are only needed for restricted documents",
+        )
+    recipient = await session.get(User, request.user_id)
+    if recipient is None or not recipient.is_active:
+        raise HTTPException(status_code=404, detail="Active user not found")
+
+    grant = await session.scalar(
+        select(KnowledgeDocumentGrant).where(
+            KnowledgeDocumentGrant.knowledge_document_id == document.id,
+            KnowledgeDocumentGrant.user_id == recipient.id,
+        )
+    )
+    if grant is None:
+        grant = KnowledgeDocumentGrant(
+            knowledge_document_id=document.id,
+            user_id=recipient.id,
+            granted_by_user_id=admin.id,
+        )
+        session.add(grant)
+        await session.commit()
+        await session.refresh(grant)
+
+    return DocumentGrantResponse(
+        document_id=document.document_id,
+        version=document.version,
+        user_id=grant.user_id,
+        granted_by_user_id=grant.granted_by_user_id,
+        granted_at=grant.granted_at,
+    )
+
+
+@app.delete(
+    "/api/admin/documents/{document_id}/versions/{version}/grants/{user_id}",
+    response_model=dict[str, str],
+)
+async def remove_document_grant(
+    document_id: str,
+    version: str,
+    user_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    admin: User = Depends(get_current_admin_user),
+) -> dict[str, str]:
+    document = await find_document_version(session, document_id, version)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document version not found")
+    grant = await session.scalar(
+        select(KnowledgeDocumentGrant).where(
+            KnowledgeDocumentGrant.knowledge_document_id == document.id,
+            KnowledgeDocumentGrant.user_id == user_id,
+        )
+    )
+    if grant is None:
+        raise HTTPException(status_code=404, detail="Document grant not found")
+    await session.delete(grant)
+    await session.commit()
+    return {"status": "revoked"}
+
+
+async def find_active_document(
+    session: AsyncSession,
+    document_id: str,
+    version: str,
+) -> KnowledgeDocument | None:
+    return await session.scalar(
+        select(KnowledgeDocument).where(
+            KnowledgeDocument.document_id == document_id,
+            KnowledgeDocument.version == version,
+            KnowledgeDocument.status == "active",
+        )
+    )
+
+
+async def find_document_version(
+    session: AsyncSession,
+    document_id: str,
+    version: str,
+) -> KnowledgeDocument | None:
+    return await session.scalar(
+        select(KnowledgeDocument).where(
+            KnowledgeDocument.document_id == document_id,
+            KnowledgeDocument.version == version,
+        )
+    )

@@ -2,6 +2,7 @@ import json
 
 from pydantic import ValidationError
 from qdrant_client.models import ScoredPoint
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from clearance.assistant.schemas import (
     AnswerCitation,
@@ -88,8 +89,9 @@ def _abstain(question: str) -> AssistantAnswerResponse:
 async def answer_question(
     question: str,
     user: User,
+    session: AsyncSession,
 ) -> AssistantAnswerResponse:
-    points = await search_documents(question, user)
+    points = await search_documents(question, user, session)
     if not points:
         return _abstain(question)
 

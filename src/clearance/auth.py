@@ -35,6 +35,14 @@ async def get_current_user(
     return user
 
 
+async def get_current_admin_user(
+    user: User = Depends(get_current_user),
+) -> User:
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Administrator access is required")
+    return user
+
+
 async def get_current_demo_user(
     demo_user_id: int = Header(alias="X-Demo-User-ID"),
     session: AsyncSession = Depends(get_db_session),

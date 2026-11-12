@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -16,6 +16,18 @@ class AccessTokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
+
+
+class DocumentGrantCreateRequest(BaseModel):
+    user_id: int = Field(gt=0)
+
+
+class DocumentGrantResponse(BaseModel):
+    document_id: str
+    version: str
+    user_id: int
+    granted_by_user_id: int | None
+    granted_at: datetime
 
 
 class AnswerDraft(BaseModel):

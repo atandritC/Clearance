@@ -42,7 +42,11 @@ def test_response_schema_forbids_extra_fields() -> None:
 @pytest.mark.asyncio
 async def test_answer_question_returns_only_valid_retrieved_citations(monkeypatch: pytest.MonkeyPatch) -> None:
     point = make_point()
-    monkeypatch.setattr(answer, "search_documents", lambda question, user: _resolved([point]))
+    monkeypatch.setattr(
+        answer,
+        "search_documents",
+        lambda question, user, session: _resolved([point]),
+    )
     monkeypatch.setattr(
         answer,
         "generate_text",
@@ -53,7 +57,9 @@ async def test_answer_question_returns_only_valid_retrieved_citations(monkeypatc
         ),
     )
 
-    response = await answer.answer_question("How do I report an incident?", make_user())
+    response = await answer.answer_question(
+        "How do I report an incident?", make_user(), object()
+    )
 
     assert response.answer == "Use the service portal."
     assert response.abstained is False
@@ -65,7 +71,11 @@ async def test_answer_question_returns_only_valid_retrieved_citations(monkeypatc
 async def test_answer_question_abstains_when_search_has_no_allowed_results(monkeypatch: pytest.MonkeyPatch) -> None:
     called = False
 
-    async def no_results(question: str, user: User) -> list[SimpleNamespace]:
+    async def no_results(
+        question: str,
+        user: User,
+        session: object,
+    ) -> list[SimpleNamespace]:
         return []
 
     async def model_must_not_be_called(*args: object, **kwargs: object) -> None:
@@ -75,7 +85,7 @@ async def test_answer_question_abstains_when_search_has_no_allowed_results(monke
     monkeypatch.setattr(answer, "search_documents", no_results)
     monkeypatch.setattr(answer, "generate_text", model_must_not_be_called)
 
-    response = await answer.answer_question("What is the policy?", make_user())
+    response = await answer.answer_question("What is the policy?", make_user(), object())
 
     assert response.abstained is True
     assert response.citations == []
@@ -84,7 +94,11 @@ async def test_answer_question_abstains_when_search_has_no_allowed_results(monke
 
 @pytest.mark.asyncio
 async def test_answer_question_abstains_for_unknown_citation_id(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(answer, "search_documents", lambda question, user: _resolved([make_point()]))
+    monkeypatch.setattr(
+        answer,
+        "search_documents",
+        lambda question, user, session: _resolved([make_point()]),
+    )
     monkeypatch.setattr(
         answer,
         "generate_text",
@@ -95,7 +109,7 @@ async def test_answer_question_abstains_for_unknown_citation_id(monkeypatch: pyt
         ),
     )
 
-    response = await answer.answer_question("What is the policy?", make_user())
+    response = await answer.answer_question("What is the policy?", make_user(), object())
 
     assert response.abstained is True
     assert response.answer == answer.ABSTENTION_TEXT
