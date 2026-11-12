@@ -27,6 +27,7 @@ async def generate_text(
     system_prompt: str,
     user_prompt: str,
     temperature: float | None = None,
+    response_format: dict[str, object] | None = None,
 ) -> LLMCallResult:
     client = AsyncGroq(
         api_key=settings.groq_api_key.get_secret_value(),
@@ -36,16 +37,22 @@ async def generate_text(
     started_at = time.perf_counter()
 
     try:
-        response = await client.chat.completions.create(
-            model=settings.groq_model,
-            messages=[
+        request_options: dict[str, object] = {
+            "model": settings.groq_model,
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=(
+            "temperature": (
                 settings.groq_temperature if temperature is None else temperature
             ),
-            max_completion_tokens=settings.groq_max_completion_tokens,
+            "max_completion_tokens": settings.groq_max_completion_tokens,
+        }
+        if response_format is not None:
+            request_options["response_format"] = response_format
+
+        response = await client.chat.completions.create(
+            **request_options,
         )
     except RateLimitError as error:
         retry_after = error.response.headers.get("retry-after")

@@ -12,6 +12,12 @@ from clearance.schemas import (
     RetrievedChunkResponse,
 )
 from clearance.auth import get_current_demo_user
+from clearance.assistant.answer import answer_question
+from clearance.assistant.schemas import (
+    AssistantAnswerRequest,
+    AssistantAnswerResponse,
+)
+from clearance.llm.errors import LLMProviderError, LLMRateLimitError
 from clearance.retrieval.search import search_documents
 
 app = FastAPI(title="Clearance")
@@ -88,3 +94,24 @@ async def demo_search(
             for point in points
         ],
     )
+
+
+@app.post("/demo/ask", response_model=AssistantAnswerResponse)
+async def demo_ask(
+    request: AssistantAnswerRequest,
+    user: User = Depends(get_current_demo_user),
+) -> AssistantAnswerResponse:
+    try:
+        return await answer_question(request.question, user)
+    except LLMRateLimitError as error:
+        headers = {"Retry-After": error.retry_after} if error.retry_after else None
+        raise HTTPException(
+            status_code=503,
+            detail="The answer service is temporarily busy. Please try again shortly.",
+            headers=headers,
+        ) from error
+    except LLMProviderError as error:
+        raise HTTPException(
+            status_code=502,
+            detail="The answer service could not complete the request.",
+        ) from error

@@ -48,9 +48,10 @@ Python, FastAPI, Pydantic v2, SQLAlchemy, Alembic, PostgreSQL, Qdrant, FastEmbed
 12. Check `curl http://127.0.0.1:8000/health` and `curl http://127.0.0.1:8000/ready`. The first checks that the API responds; the second also checks its Postgres connection.
 13. In demo mode, `GET /demo/users` lists the fictional users, `GET /demo/whoami` accepts the `X-Demo-User-ID` header to select one, and `GET /demo/search` searches the indexed documents for that user. These routes are a local learning shortcut, not production sign-in.
 14. Run `uv run python scripts/groq_baseline.py` to make two short Groq calls and view their answers, token counts, response time, and estimated cost. The results are sample observations, not an answer-quality evaluation.
-15. Stop the API with `Ctrl+C`, then stop PostgreSQL and Qdrant with `docker compose down`. Named volumes keep local database and vector data across container restarts.
+15. Ask from the indexed corpus with `curl -X POST http://127.0.0.1:8000/demo/ask -H 'Content-Type: application/json' -H 'X-Demo-User-ID: 2' -d '{"question":"Where should employees report an IT incident?"}'`. This demo route uses filtered search, returns citations only from retrieved chunks, and abstains when it lacks authorized evidence.
+16. Stop the API with `Ctrl+C`, then stop PostgreSQL and Qdrant with `docker compose down`. Named volumes keep local database and vector data across container restarts.
 
-The `User` and `KnowledgeDocument` tables are described in `src/clearance/models.py`, and Alembic migration files under `migrations/` keep database layout changes repeatable. PostgreSQL stores document details and versions; Qdrant stores searchable text chunks, their vectors, and search metadata. The demo search route filters to active company documents and documents from the selected user's department; restricted documents remain excluded until explicit grants are implemented. Demo identity selection is a local learning shortcut, not production sign-in. A standalone Groq baseline checks model connectivity and usage tracking; the API does not yet use the model to answer questions. Production authentication, answer generation in the API, tools, and the web interface are not implemented yet. Keep credentials in `.env`; never commit API keys or other secrets.
+The `User` and `KnowledgeDocument` tables are described in `src/clearance/models.py`, and Alembic migration files under `migrations/` keep database layout changes repeatable. PostgreSQL stores document details and versions; Qdrant stores searchable text chunks, their vectors, and search metadata. The demo search route filters to active company documents and documents from the selected user's department; restricted documents remain excluded until explicit grants are implemented. `POST /demo/ask` uses those filtered results to create a structured Groq answer, checks citation IDs against the retrieved chunks, and abstains when it lacks valid evidence. Demo identity selection is a local learning shortcut, not production sign-in. Production authentication, explicit grants, specialist tools, and the web interface are not implemented yet. Keep credentials in `.env`; never commit API keys or other secrets.
 
 ## Evaluation results
 
@@ -65,7 +66,7 @@ No project evaluation measurements are reported yet. At the evaluation checkpoin
 | p50 / p95 latency | Not measured | Pending |
 | Cost per question | Not measured | Pending |
 
-The Groq baseline makes two sample calls at temperatures 0.0 and 0.7. On the development run, both returned the instructed safe fallback for a question with no source text. Their estimated costs were about $0.000038 and $0.000035. This is only a connection and usage-accounting check, not an answer-quality evaluation.
+The Groq baseline makes two sample calls at temperatures 0.0 and 0.7. On the development run, both returned the instructed safe fallback for a question with no source text. Their estimated costs were about $0.000038 and $0.000035. A separate live check confirmed that the configured model accepts the strict structured response schema and returns the requested answer and citation ID for supplied synthetic evidence. These checks confirm connectivity and response formatting; they are not an answer-quality evaluation.
 
 ## Architecture
 
