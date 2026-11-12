@@ -28,6 +28,11 @@ def parse_knowledge_base(path: Path) -> list[ParsedDocument]:
         if not lines or not lines[0].startswith("### DOC-"):
             continue
 
+        section_heading = re.search(r"^## ", section, flags=re.MULTILINE)
+        if section_heading:
+            section = section[: section_heading.start()]
+            lines = section.splitlines()
+
         heading_parts = lines[0].split(" — ", maxsplit=1)
         if len(heading_parts) != 2:
             raise ValueError(f"Could not read document title: {lines[0]}")
@@ -59,6 +64,7 @@ def parse_knowledge_base(path: Path) -> list[ParsedDocument]:
             raise ValueError(f"{lines[0]} is missing: {', '.join(missing_fields)}")
 
         body = "\n".join(lines[body_start:]).strip() if body_start else ""
+        body = re.sub(r"\n---\s*$", "", body).strip()
 
         documents.append(
             ParsedDocument(

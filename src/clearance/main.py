@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Query
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,8 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from clearance.config import settings
 from clearance.database import get_db_session
 from clearance.models import User
-from clearance.schemas import DemoUserResponse
+from clearance.schemas import (
+    DemoSearchResponse,
+    DemoUserResponse,
+    RetrievedChunkResponse,
+)
 from clearance.auth import get_current_demo_user
+from clearance.retrieval.search import search_documents
 
 app = FastAPI(title="Clearance")
 
@@ -51,7 +56,6 @@ async def list_demo_users(
     if not settings.demo_mode:
         raise HTTPException(status_code=404, detail="Not found")
 
-    # Get active demo users, ordered by their ID.
     result = await session.scalars(
         select(User).where(User.is_active.is_(True)).order_by(User.id)
     )
@@ -65,3 +69,22 @@ async def list_demo_users(
         }
         for user in result.all()
     ]
+
+
+@app.get("/demo/search", response_model=DemoSearchResponse)
+async def demo_search(
+    question: str = Query(min_length=3, max_length=500),
+    user: User = Depends(get_current_demo_user),
+) -> DemoSearchResponse:
+    points = await search_documents(question, user)
+
+    return DemoSearchResponse(
+        question=question,
+        results=[
+            RetrievedChunkResponse(
+                score=point.score,
+                **(point.payload or {}),
+            )
+            for point in points
+        ],
+    )
