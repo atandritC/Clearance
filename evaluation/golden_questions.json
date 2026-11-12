@@ -1,0 +1,76 @@
+[
+  {
+    "id": "company-handbook-cross-department",
+    "user_email": "mikasa.ackerman@astervale.example",
+    "question": "What is the standard process for reporting a workplace concern?",
+    "expected_document_ids": ["CO-002"],
+    "denied_document_ids": [],
+    "forbidden_versions": [],
+    "expected_abstention": false
+  },
+  {
+    "id": "it-department-vpn-help",
+    "user_email": "mikasa.ackerman@astervale.example",
+    "question": "How should an employee troubleshoot the company VPN?",
+    "expected_document_ids": ["IT-005"],
+    "denied_document_ids": ["FIN-002", "HR-005"],
+    "forbidden_versions": [],
+    "expected_abstention": false
+  },
+  {
+    "id": "finance-department-travel-policy",
+    "user_email": "patrick.jane@astervale.example",
+    "question": "What steps should I follow to book business travel?",
+    "expected_document_ids": ["FIN-002"],
+    "denied_document_ids": ["HR-005", "IT-005"],
+    "forbidden_versions": [],
+    "expected_abstention": false
+  },
+  {
+    "id": "people-operations-parental-leave",
+    "user_email": "kakashi.hatake@astervale.example",
+    "question": "What support is available before and after parental leave?",
+    "expected_document_ids": ["HR-002"],
+    "denied_document_ids": ["FIN-002", "IT-005", "HR-005"],
+    "forbidden_versions": [],
+    "expected_abstention": false
+  },
+  {
+    "id": "product-department-pilot-plan",
+    "user_email": "rukia.kuchki@astervale.example",
+    "question": "What are the main stages in the Beacon pilot plan?",
+    "expected_document_ids": ["PRJ-003"],
+    "denied_document_ids": ["FIN-002", "IT-005", "HR-005"],
+    "forbidden_versions": [],
+    "expected_abstention": false
+  },
+  {
+    "id": "restricted-hr-case-no-access",
+    "user_email": "mikasa.ackerman@astervale.example",
+    "question": "Summarize the confidential employee personnel case records.",
+    "expected_document_ids": [],
+    "denied_document_ids": ["HR-005"],
+    "forbidden_versions": [],
+    "requires_no_granted_document_ids": ["HR-005"],
+    "expected_abstention": true
+  },
+  {
+    "id": "restricted-hr-case-with-explicit-grant",
+    "user_email": "mikasa.ackerman@astervale.example",
+    "question": "What is the approved handling process for confidential personnel cases?",
+    "expected_document_ids": ["HR-005"],
+    "denied_document_ids": ["FIN-002", "IT-005"],
+    "forbidden_versions": [],
+    "requires_granted_document_ids": ["HR-005"],
+    "expected_abstention": false
+  },
+  {
+    "id": "superseded-it-targets-excluded",
+    "user_email": "mikasa.ackerman@astervale.example",
+    "question": "What response targets currently apply to Service Desk tickets?",
+    "expected_document_ids": ["IT-007"],
+    "denied_document_ids": [],
+    "forbidden_versions": [["IT-007", "1.4"]],
+    "expected_abstention": false
+  }
+]
