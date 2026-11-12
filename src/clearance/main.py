@@ -57,12 +57,13 @@ async def login(
 @app.get("/auth/me", response_model=DemoUserResponse)
 async def authenticated_user(
     user: User = Depends(get_current_user),
-) -> dict[str, int | str]:
+) -> dict[str, int | str | bool]:
     return {
         "id": user.id,
         "display_name": user.display_name,
         "role": user.role,
         "department": user.department,
+        "is_admin": user.is_admin,
     }
 
 

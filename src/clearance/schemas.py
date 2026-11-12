@@ -8,6 +8,7 @@ class DemoUserResponse(BaseModel):
     display_name: str
     role: str
     department: str
+    is_admin: bool = False
 
 
 class RetrievedChunkResponse(BaseModel):

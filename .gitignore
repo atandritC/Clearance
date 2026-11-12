@@ -14,6 +14,8 @@ __pycache__/
 # Frontend dependencies and generated output
 node_modules/
 frontend/dist/
+frontend/.vite/
+frontend/coverage/
 
 # Local databases, vector data, logs, and evaluation outputs
 *.sqlite3

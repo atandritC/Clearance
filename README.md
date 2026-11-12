@@ -58,9 +58,11 @@ Python, FastAPI, Pydantic v2, SQLAlchemy, Alembic, PostgreSQL, Qdrant, FastEmbed
 21. Run retrieval and access checks on the synthetic question set with `uv run python scripts/run_evaluation.py --output reports/generated/evaluation.json`. Grant-dependent cases are skipped when the required active grant is absent. The generated report directory is ignored by Git.
 22. Add `--answers` to also ask Groq to answer each evaluation question and measure abstention accuracy and citation overlap. This makes live model calls and may incur provider charges. Citation overlap is not a semantic faithfulness score.
 23. To create an IT ticket, send `{"question":"Create an IT ticket for ...","confirm_actions":true}`. This explicitly enables the ticket creation tool for that request; without `confirm_actions:true`, the tool is unavailable. Use a signed-in account for `/api/ask`; demo mode is only a local learning shortcut.
-24. Stop the API with `Ctrl+C`, then stop PostgreSQL and Qdrant with `docker compose down`. Named volumes keep local database and vector data across container restarts.
+24. In a second terminal, run `cd frontend && npm ci && npm run dev`. Open the Vite address shown in the terminal (usually `http://localhost:5173`). Vite forwards `/demo`, `/auth`, and `/api` requests to the API on port `8000`.
+25. In the app, use the profile menu to switch fictional demo identities or sign in with a password. The theme follows your system appearance by default; a manual theme choice is saved in the browser. The Sources and My requests views show results from the current session. Signed-in administrators see an Admin console for adding and removing restricted-document grants; the API checks administrator access on every change.
+26. Stop the frontend and API with `Ctrl+C` in their terminals, then stop PostgreSQL and Qdrant with `docker compose down`. Named volumes keep local database and vector data across container restarts.
 
-The table descriptions are in `src/clearance/models.py`, and Alembic migrations under `migrations/` keep database layout changes repeatable. PostgreSQL stores accounts, document details, grants, synthetic leave balances, and IT tickets; Qdrant stores searchable text chunks, vectors, and search metadata. Passwords are stored as Argon2 hashes. `POST /auth/login` issues a short-lived signed token; protected routes check that token and load the current active user record from PostgreSQL. Retrieval allows active company documents, same-department documents, and active restricted versions explicitly granted to that user. It also filters out search matches below `QDRANT_SCORE_THRESHOLD`. Admin-only endpoints can list, add, and revoke grants; grants for old document versions do not expose superseded content. Both ask routes use a LangGraph workflow: it searches only permitted documents, makes employee identity available to MCP tools only from the authenticated server-side user, and returns structured Groq answers with citations checked against retrieved sources. Tool results are checked against the tools actually called. Leave balances are limited to the employee, HR managers, and administrators; ticket lists are limited to the signed-in employee. The ticket creation tool is only registered when `confirm_actions` is true. The `X-Demo-User-ID` header remains a local learning shortcut. The web interface is not implemented yet. Keep credentials in `.env`; never commit API keys or other secrets.
+The table descriptions are in `src/clearance/models.py`, and Alembic migrations under `migrations/` keep database layout changes repeatable. PostgreSQL stores accounts, document details, grants, synthetic leave balances, and IT tickets; Qdrant stores searchable text chunks, vectors, and search metadata. Passwords are stored as Argon2 hashes. `POST /auth/login` issues a short-lived signed token; protected routes check that token and load the current active user record from PostgreSQL. Retrieval allows active company documents, same-department documents, and active restricted versions explicitly granted to that user. It also filters out search matches below `QDRANT_SCORE_THRESHOLD`. Admin-only endpoints can list, add, and revoke grants; grants for old document versions do not expose superseded content. Both ask routes use a LangGraph workflow: it searches only permitted documents, makes employee identity available to MCP tools only from the authenticated server-side user, and returns structured Groq answers with citations checked against retrieved sources. Tool results are checked against the tools actually called. Leave balances are limited to the employee, HR managers, and administrators; ticket lists are limited to the signed-in employee. The ticket creation tool is only registered when `confirm_actions` is true. The React interface provides desktop and mobile layouts, light and dark themes, demo identity switching, password sign-in, source details, session request history, and admin document-grant controls. The `X-Demo-User-ID` header remains a local learning shortcut. Keep credentials in `.env`; never commit API keys or other secrets.
 
 ## Evaluation results
 
@@ -70,11 +72,30 @@ Record real values with their test-set size and method:
 
 | Metric | Result | Dataset / method |
 |---|---:|---|
-| Retrieval precision | Not measured | Pending |
-| Retrieval recall | Not measured | Pending |
+| Document precision at top 5 | 0.875 | 7 measured cases; one grant-required case skipped; synthetic set |
+| Document recall at top 5 | 1.000 | Same run; score threshold 0.68 |
 | Faithfulness | Not measured | Pending |
-| Leakage rate | Not measured | Pending |
+| Access leakage cases | 0 / 7 | Synthetic access-boundary cases; one case skipped |
 | p50 / p95 latency | Not measured | Pending |
 | Cost per question | Not measured | Pending |
 
-The Groq baseline makes two sample calls at temperatures 0.0 and 0.7. On the development run, both returned the instructed safe fallback for a question with no source text. Their estimated costs were about $0.000038 and $0.000035. A separate live check confirmed that the configured model accepts the strict structured response schema and returns the requested answer and citation ID for supplied synthetic evidence. These checks confirm connectivity and response formatting; they are not an answer-quality evaluation.
+The Groq baseline makes two sample calls at temperatures 0.0 and 0.7. On the development run, both returned the instructed safe fallback for a question with no source text. Their estimated costs were about $0.000038 and $0.000035. A separate live check confirmed that the configured model accepts the strict structured response schema and returns the requested answer and citation ID for supplied synthetic evidence. These checks confirm connectivity and response formatting; they are not an answer-quality evaluation. The retrieval result above is a small smoke evaluation, not evidence of production quality or zero leakage risk.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  U[Desktop or mobile browser] --> F[React and Vite frontend]
+  F -->|demo, login, ask, admin grants| A[FastAPI]
+  A --> AU[Authenticated user and access rules]
+  AU --> G[LangGraph answer flow]
+  G --> Q[Qdrant permission-filtered search]
+  G --> M[Groq tool choice and answer]
+  G --> T[Per-request MCP HR and IT tools]
+  T --> P[(PostgreSQL accounts, balances, tickets)]
+  A --> P
+  Q --> G
+  M --> G
+  G -->|checked answer, sources, tool results| A
+  A --> F
+```
