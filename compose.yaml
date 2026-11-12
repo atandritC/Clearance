@@ -1,28 +1,124 @@
+# Define the containers that make up the local Clearance app.
 services:
+  # Store accounts, document details, grants, balances, and tickets.
   postgres:
+    # Use the selected PostgreSQL image version.
     image: postgres:18.6
+    # Read the database name and login details from the local .env file.
     environment:
+      # Set the database name created by the PostgreSQL image.
       POSTGRES_DB: ${POSTGRES_DB:?add POSTGRES_DB to .env}
+      # Set the database user created by the PostgreSQL image.
       POSTGRES_USER: ${POSTGRES_USER:?add POSTGRES_USER to .env}
+      # Set the password for that database user.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?add POSTGRES_PASSWORD to .env}
+    # Make the database reachable on the Mac at port 5433.
     ports:
+      # Keep the database port private to this Mac.
       - "127.0.0.1:5433:5432"
+    # Keep database files when the container is replaced.
     volumes:
+      # Store PostgreSQL data in a named Docker volume.
       - postgres_data:/var/lib/postgresql
+    # Check whether PostgreSQL is ready to accept connections.
     healthcheck:
+      # Ask PostgreSQL itself whether its database is ready.
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      # Repeat the readiness check every five seconds.
       interval: 5s
-      timeout: 5s 
+      # Stop waiting if one check takes longer than five seconds.
+      timeout: 5s
+      # Mark the service unhealthy after five failed checks.
       retries: 5
 
+  # Store searchable text chunks and their vectors.
   qdrant:
+    # Use the selected Qdrant image version.
     image: qdrant/qdrant:v1.20.0
+    # Make Qdrant's local ports reachable from this Mac.
     ports:
+      # Allow local HTTP requests to Qdrant.
       - "127.0.0.1:6333:6333"
+      # Allow local gRPC requests to Qdrant.
       - "127.0.0.1:6334:6334"
+    # Keep the vector database files when its container is replaced.
     volumes:
+      # Store Qdrant data in a named Docker volume.
       - qdrant_data:/qdrant/storage
 
+  # Run the FastAPI backend inside its own container.
+  api:
+    # Build the API image from the project root Dockerfile.
+    build:
+      # Send the project root files that are allowed by .dockerignore.
+      context: .
+      # Use the root Dockerfile to build the API image.
+      dockerfile: Dockerfile
+    # Put settings from the local .env file into the API container.
+    env_file:
+      # Read the secrets and app settings from this file on the Mac.
+      - .env
+    # Override local host addresses so the API can reach other containers.
+    environment:
+      # Connect to PostgreSQL by its Compose service name.
+      POSTGRES_HOST: postgres
+      # Use PostgreSQL's port inside the Compose network.
+      POSTGRES_PORT: "5432"
+      # Connect to Qdrant by its Compose service name.
+      QDRANT_URL: http://qdrant:6333
+    # Publish the API on this Mac for local tools and API docs.
+    ports:
+      # Keep the API available only on this Mac at port 8000.
+      - "127.0.0.1:8000:8000"
+    # Start the data services before starting the API.
+    depends_on:
+      # Wait until PostgreSQL's readiness check passes.
+      postgres:
+        # Require a healthy database before starting the API.
+        condition: service_healthy
+      # Start Qdrant before the API container.
+      qdrant:
+        # Wait until the Qdrant container has started.
+        condition: service_started
+    # Let Compose know when the API is answering requests.
+    healthcheck:
+      # Call the API's simple health endpoint from inside the container.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      # Check API health every 30 seconds.
+      interval: 30s
+      # Give each health check up to five seconds.
+      timeout: 5s
+      # Wait ten seconds before the first health check.
+      start_period: 10s
+      # Mark the API unhealthy after three failed checks.
+      retries: 3
+    # Restart the API container if it stops unexpectedly.
+    restart: unless-stopped
+
+  # Serve the built React site and forward its API requests to FastAPI.
+  frontend:
+    # Build the frontend image from the frontend folder.
+    build:
+      # Use the frontend folder as the files available to this build.
+      context: ./frontend
+      # Use the frontend Dockerfile to build and serve the site.
+      dockerfile: Dockerfile
+    # Make the website available from this Mac.
+    ports:
+      # Open the website at http://127.0.0.1:8080.
+      - "127.0.0.1:8080:80"
+    # Start the website after the API is healthy.
+    depends_on:
+      # Wait for the API health check to pass.
+      api:
+        # Require the API to be healthy before starting Nginx.
+        condition: service_healthy
+    # Restart the frontend container if it stops unexpectedly.
+    restart: unless-stopped
+
+# Declare the named storage used by the database containers.
 volumes:
+  # Keep PostgreSQL data across container restarts.
   postgres_data:
+  # Keep Qdrant data across container restarts.
   qdrant_data:

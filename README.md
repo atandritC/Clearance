@@ -23,7 +23,7 @@ The project is built in small, verified steps. This README will be updated at ea
 
 ## Stack
 
-Python, FastAPI, Pydantic v2, SQLAlchemy, Alembic, PostgreSQL, Qdrant, FastEmbed, LangGraph, an MCP server, Groq, React + Vite, Docker Compose, and EC2 deployment. Package versions and provider limits will be checked against current official documentation when each installation or integration step begins.
+Python, FastAPI, Pydantic v2, SQLAlchemy, Alembic, PostgreSQL, Qdrant, FastEmbed, LangGraph, an MCP server, Groq, React + Vite, Nginx, Docker Compose, and EC2 deployment. Package versions and provider limits will be checked against current official documentation when each installation or integration step begins.
 
 ## Setup and run
 
@@ -33,11 +33,27 @@ Python, FastAPI, Pydantic v2, SQLAlchemy, Alembic, PostgreSQL, Qdrant, FastEmbed
 - Docker Desktop with Docker Compose
 - A Groq API key
 
-### Local services
+### Run the full app in Docker
+
+1. Copy `.env.example` to `.env`, then set the PostgreSQL password, Groq API key, and a private random `JWT_SECRET_KEY` (at least 32 characters). Keep `.env` local; Git ignores it, and Docker does not copy it into either image.
+2. Build the API and frontend images and start all four services with `docker compose up -d --build`.
+3. Create or update the database tables with `docker compose exec api uv run --no-sync alembic upgrade head`.
+4. Create or reset the fictional users and balances with `docker compose exec api uv run --no-sync python scripts/seed_demo_users.py`. The script asks for one local demo password and saves only its Argon2 hash for the six demo accounts.
+5. Import document details into PostgreSQL with `docker compose exec api uv run --no-sync python scripts/import_knowledge_metadata.py`.
+6. Create the Qdrant collection with `docker compose exec api uv run --no-sync python scripts/create_qdrant_collection.py`.
+7. Index the source corpus with `docker compose exec api uv run --no-sync python scripts/index_knowledge_base.py`. FastEmbed downloads its model the first time it runs; the corpus currently produces 44 searchable chunks.
+8. Check service state with `docker compose ps`. Open the frontend at `http://127.0.0.1:8080`; the API docs are at `http://127.0.0.1:8000/docs`.
+9. Check the API through the frontend proxy with `curl http://127.0.0.1:8080/health` and `curl http://127.0.0.1:8080/ready`. The first checks that the API responds; the second also checks its PostgreSQL connection.
+10. In demo mode, open the app to switch between fictional users. The API and Nginx containers communicate over Compose's private network; PostgreSQL and Qdrant keep their data in named volumes.
+11. Stop the containers with `docker compose down`. The named database and vector volumes remain for the next start.
+
+### Run services locally for development
+
+If you previously started the full Docker app, stop its API and frontend containers with `docker compose stop api frontend` before starting the API and Vite directly on your Mac. PostgreSQL and Qdrant can stay running.
 
 1. Install the locked Python dependencies with `uv sync`.
 2. Copy `.env.example` to `.env`, then set the PostgreSQL password, Groq API key, and a private random `JWT_SECRET_KEY` (at least 32 characters). `QDRANT_SCORE_THRESHOLD` defaults to `0.68` and can be adjusted between `0` and `1` to control how close a search result must be before the assistant sees it. Keep `.env` local; it is ignored by Git.
-3. Start PostgreSQL and Qdrant with `docker compose up -d`.
+3. Start only PostgreSQL and Qdrant with `docker compose up -d postgres qdrant`.
 4. Apply the database migrations with `uv run alembic upgrade head`. This creates the user, document, per-user grant, leave-balance, and IT-ticket tables and adds the account security fields.
 5. Add or update the fictional local users and leave balances with `uv run python scripts/seed_demo_users.py`. It asks for one local demo password (at least 12 characters) and saves only its Argon2 hash for all six demo accounts. The Sofia Gigante account is marked as the local knowledge administrator. Run the script again to reset their shared local password and account setup.
 6. Import document details into PostgreSQL with `uv run python scripts/import_knowledge_metadata.py`. The current corpus has 41 document versions.
@@ -85,8 +101,10 @@ The Groq baseline makes two sample calls at temperatures 0.0 and 0.7. On the dev
 
 ```mermaid
 flowchart LR
-  U[Desktop or mobile browser] --> F[React and Vite frontend]
-  F -->|demo, login, ask, admin grants| A[FastAPI]
+  U[Desktop or mobile browser] --> N[Nginx frontend container]
+  N -->|static React assets| U
+  U -->|demo, login, ask, admin grants| N
+  N -->|API path forwarding| A[FastAPI container]
   A --> AU[Authenticated user and access rules]
   AU --> G[LangGraph answer flow]
   G --> Q[Qdrant permission-filtered search]

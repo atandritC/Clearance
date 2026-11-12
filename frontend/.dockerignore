@@ -1,0 +1,12 @@
+# Install these packages inside the frontend image.
+node_modules/
+
+# Build the website inside the frontend image.
+dist/
+
+# Ignore Vite's local cache and test coverage output.
+.vite/
+coverage/
+
+# Ignore local system files.
+.DS_Store
