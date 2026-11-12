@@ -22,7 +22,7 @@ The project is built in small, verified steps. This README will be updated at ea
 
 ## Stack
 
-Python, FastAPI, Pydantic v2, SQLAlchemy, Alembic, PostgreSQL, Qdrant, LangGraph, an MCP server, Groq, a local embedding model, React + Vite, Docker Compose, and EC2 deployment. Package versions and provider limits will be checked against current official documentation when each installation or integration step begins.
+Python, FastAPI, Pydantic v2, SQLAlchemy, Alembic, PostgreSQL, Qdrant, FastEmbed, LangGraph, an MCP server, Groq, React + Vite, Docker Compose, and EC2 deployment. Package versions and provider limits will be checked against current official documentation when each installation or integration step begins.
 
 ## Setup and run
 
@@ -37,15 +37,18 @@ Python, FastAPI, Pydantic v2, SQLAlchemy, Alembic, PostgreSQL, Qdrant, LangGraph
 1. Install the locked Python dependencies with `uv sync`.
 2. Create a `.env` file in the project root with `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD`. Keep this file local; `.env` is ignored by Git.
 3. Start PostgreSQL and Qdrant with `docker compose up -d`.
-4. Apply the database migrations with `uv run alembic upgrade head`. This creates the current `users` table in Postgres.
+4. Apply the database migrations with `uv run alembic upgrade head`. This creates the `users` and `knowledge_documents` tables.
 5. Add the fictional local users with `uv run python scripts/seed_demo_users.py`. It skips users that already exist.
-6. Check service state with `docker compose ps`. PostgreSQL is published on `127.0.0.1:5433`; Qdrant is published on `127.0.0.1:6333` (HTTP) and `127.0.0.1:6334` (gRPC).
-7. Start the API with `uv run fastapi dev src/clearance/main.py`. It listens on `http://127.0.0.1:8000` and provides interactive API docs at `/docs`.
-8. Check `curl http://127.0.0.1:8000/health` and `curl http://127.0.0.1:8000/ready`. The first checks that the API responds; the second also checks its Postgres connection.
-9. In demo mode, `GET /demo/users` lists the fictional users, and `GET /demo/whoami` accepts the `X-Demo-User-ID` header to select one. These routes are a local learning shortcut, not production sign-in. Stop the API with `Ctrl+C`.
-10. Stop PostgreSQL and Qdrant with `docker compose down`. Named volumes keep local database and vector data across container restarts.
+6. Import document details into PostgreSQL with `uv run python scripts/import_knowledge_metadata.py`. The current corpus has 41 document versions.
+7. Create the Qdrant collection with `uv run python scripts/create_qdrant_collection.py`.
+8. Index the source corpus with `uv run python scripts/index_knowledge_base.py`. FastEmbed creates vectors locally; the first run downloads its model. At this checkpoint, the corpus produces 47 searchable chunks.
+9. Check service state with `docker compose ps`. PostgreSQL is published on `127.0.0.1:5433`; Qdrant is published on `127.0.0.1:6333` (HTTP) and `127.0.0.1:6334` (gRPC).
+10. Start the API with `uv run fastapi dev src/clearance/main.py`. It listens on `http://127.0.0.1:8000` and provides interactive API docs at `/docs`.
+11. Check `curl http://127.0.0.1:8000/health` and `curl http://127.0.0.1:8000/ready`. The first checks that the API responds; the second also checks its Postgres connection.
+12. In demo mode, `GET /demo/users` lists the fictional users, and `GET /demo/whoami` accepts the `X-Demo-User-ID` header to select one. These routes are a local learning shortcut, not production sign-in. Stop the API with `Ctrl+C`.
+13. Stop PostgreSQL and Qdrant with `docker compose down`. Named volumes keep local database and vector data across container restarts.
 
-The `User` table is described in `src/clearance/models.py`, and Alembic migration files under `migrations/` keep database layout changes repeatable. The API uses database sessions for readiness and demo-user routes. Demo mode provides a temporary way to choose a seeded user; production authentication, document ingestion, chat/RAG, and the web interface are not implemented yet. Keep credentials in `.env`; never commit API keys or other secrets.
+The `User` and `KnowledgeDocument` tables are described in `src/clearance/models.py`, and Alembic migration files under `migrations/` keep database layout changes repeatable. PostgreSQL stores document details and versions; Qdrant stores searchable text chunks, their vectors, and search metadata. The API uses database sessions for readiness and demo-user routes. Demo mode provides a temporary way to choose a seeded user; production authentication, permission-filtered retrieval, chat/RAG, and the web interface are not implemented yet. Keep credentials in `.env`; never commit API keys or other secrets.
 
 ## Evaluation results
 

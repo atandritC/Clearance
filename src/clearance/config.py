@@ -19,6 +19,12 @@ class Settings(BaseSettings):
 
     demo_mode: bool = False
 
+    qdrant_url: str = "http://127.0.0.1:6333"
+
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+
+    qdrant_collection: str = "clearance_documents"
+
     @property
     def database_url(self) -> URL:
         return URL.create(
