@@ -146,7 +146,7 @@ async def demo_ask(
     user: User = Depends(get_current_demo_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> AssistantAnswerResponse:
-    return await run_ask(request.question, user, session)
+    return await run_ask(request.question, user, session, request.confirm_actions)
 
 
 @app.post("/api/ask", response_model=AssistantAnswerResponse)
@@ -155,16 +155,17 @@ async def authenticated_ask(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> AssistantAnswerResponse:
-    return await run_ask(request.question, user, session)
+    return await run_ask(request.question, user, session, request.confirm_actions)
 
 
 async def run_ask(
     question: str,
     user: User,
     session: AsyncSession,
+    confirm_actions: bool = False,
 ) -> AssistantAnswerResponse:
     try:
-        return await answer_question(question, user, session)
+        return await answer_question(question, user, session, confirm_actions)
     except LLMRateLimitError as error:
         headers = {"Retry-After": error.retry_after} if error.retry_after else None
         raise HTTPException(

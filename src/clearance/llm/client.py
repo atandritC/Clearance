@@ -21,6 +21,7 @@ class LLMCallResult:
     total_tokens: int
     latency_seconds: float
     estimated_cost_usd: float
+    tool_calls: list[dict[str, object]]
 
 
 async def generate_text(
@@ -28,6 +29,22 @@ async def generate_text(
     user_prompt: str,
     temperature: float | None = None,
     response_format: dict[str, object] | None = None,
+) -> LLMCallResult:
+    return await generate_completion(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=temperature,
+        response_format=response_format,
+    )
+
+
+async def generate_completion(
+    messages: list[dict[str, object]],
+    temperature: float | None = None,
+    response_format: dict[str, object] | None = None,
+    tools: list[dict[str, object]] | None = None,
 ) -> LLMCallResult:
     client = AsyncGroq(
         api_key=settings.groq_api_key.get_secret_value(),
@@ -39,10 +56,7 @@ async def generate_text(
     try:
         request_options: dict[str, object] = {
             "model": settings.groq_model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+            "messages": messages,
             "temperature": (
                 settings.groq_temperature if temperature is None else temperature
             ),
@@ -50,6 +64,9 @@ async def generate_text(
         }
         if response_format is not None:
             request_options["response_format"] = response_format
+        if tools is not None:
+            request_options["tools"] = tools
+            request_options["tool_choice"] = "auto"
 
         response = await client.chat.completions.create(
             **request_options,
@@ -72,8 +89,12 @@ async def generate_text(
         raise LLMProviderError("The model provider returned no answer.")
 
     choice = response.choices[0]
-    content = choice.message.content
-    if not content:
+    content = choice.message.content or ""
+    tool_calls = [
+        call.model_dump(mode="json", exclude_none=True)
+        for call in (getattr(choice.message, "tool_calls", None) or [])
+    ]
+    if not content and not tool_calls:
         raise LLMProviderError("The model provider returned an empty answer.")
 
     usage = response.usage
@@ -96,6 +117,7 @@ async def generate_text(
         total_tokens=total_tokens,
         latency_seconds=latency_seconds,
         estimated_cost_usd=estimated_cost_usd,
+        tool_calls=tool_calls,
     )
 
     logger.info(

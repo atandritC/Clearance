@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 class AssistantAnswerRequest(BaseModel):
     question: str = Field(min_length=3, max_length=500)
+    confirm_actions: bool = False
 
 
 class LoginRequest(BaseModel):
@@ -33,6 +34,7 @@ class DocumentGrantResponse(BaseModel):
 class AnswerDraft(BaseModel):
     answer: str
     citation_ids: list[str]
+    tool_result_ids: list[str]
     abstain: bool
 
 
@@ -47,8 +49,15 @@ class AnswerCitation(BaseModel):
     excerpt: str
 
 
+class ToolResultResponse(BaseModel):
+    result_id: str
+    tool_name: str
+    data: dict[str, object]
+
+
 class AssistantAnswerResponse(BaseModel):
     question: str
     answer: str
     abstained: bool
     citations: list[AnswerCitation]
+    tool_results: list[ToolResultResponse] = Field(default_factory=list)

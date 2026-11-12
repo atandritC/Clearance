@@ -9,7 +9,8 @@ Clearance is a learning project for a permission-aware company knowledge assista
 - Retrieval-augmented generation over versioned company documents.
 - Server-side access filters derived from authenticated identity.
 - Role-specific answers with citations and safe abstention.
-- Permission checks inside HR and IT tools exposed through MCP.
+- Permission checks inside HR and IT tools exposed through an in-process MCP server.
+- A LangGraph workflow that combines document search with employee-specific tools.
 - Evaluation of retrieval quality, faithfulness, leakage rate, latency, and cost per question.
 
 ## Learning workflow
@@ -37,12 +38,12 @@ Python, FastAPI, Pydantic v2, SQLAlchemy, Alembic, PostgreSQL, Qdrant, FastEmbed
 1. Install the locked Python dependencies with `uv sync`.
 2. Copy `.env.example` to `.env`, then set the PostgreSQL password, Groq API key, and a private random `JWT_SECRET_KEY` (at least 32 characters). Keep `.env` local; it is ignored by Git.
 3. Start PostgreSQL and Qdrant with `docker compose up -d`.
-4. Apply the database migrations with `uv run alembic upgrade head`. This creates the user, document, and per-user document-grant tables and adds the account security fields.
-5. Add or update the fictional local users with `uv run python scripts/seed_demo_users.py`. It asks for one local demo password (at least 12 characters) and saves only its Argon2 hash for all six demo accounts. The Sofia Gigante account is marked as the local knowledge administrator. Run the script again to reset their shared local password and account setup.
+4. Apply the database migrations with `uv run alembic upgrade head`. This creates the user, document, per-user grant, leave-balance, and IT-ticket tables and adds the account security fields.
+5. Add or update the fictional local users and leave balances with `uv run python scripts/seed_demo_users.py`. It asks for one local demo password (at least 12 characters) and saves only its Argon2 hash for all six demo accounts. The Sofia Gigante account is marked as the local knowledge administrator. Run the script again to reset their shared local password and account setup.
 6. Import document details into PostgreSQL with `uv run python scripts/import_knowledge_metadata.py`. The current corpus has 41 document versions.
 7. Create the Qdrant collection with `uv run python scripts/create_qdrant_collection.py`.
 8. Index the source corpus with `uv run python scripts/index_knowledge_base.py`. FastEmbed creates vectors locally; the first run downloads its model. At this checkpoint, the corpus produces 44 searchable chunks.
-9. Run `uv run pytest -q` to check retrieval filters and grants, password and token checks, answer citations, and Groq usage handling.
+9. Run `uv run pytest -q` to check permission filters, password and token handling, answer validation, and Groq usage handling.
 10. Check service state with `docker compose ps`. PostgreSQL is published on `127.0.0.1:5433`; Qdrant is published on `127.0.0.1:6333` (HTTP) and `127.0.0.1:6334` (gRPC).
 11. Start the API with `uv run fastapi dev src/clearance/main.py`. It listens on `http://127.0.0.1:8000` and provides interactive API docs at `/docs`.
 12. Check `curl http://127.0.0.1:8000/health` and `curl http://127.0.0.1:8000/ready`. The first checks that the API responds; the second also checks its Postgres connection.
@@ -53,9 +54,11 @@ Python, FastAPI, Pydantic v2, SQLAlchemy, Alembic, PostgreSQL, Qdrant, FastEmbed
 17. Send an authenticated ask with `curl -X POST http://127.0.0.1:8000/api/ask -H 'Content-Type: application/json' -H 'Authorization: Bearer YOUR_ACCESS_TOKEN' -d '{"question":"Where should employees report an IT incident?"}'`. The API loads the active account from PostgreSQL for each request; it does not trust role or department values from the token or request.
 18. Check the signed-in identity with `curl http://127.0.0.1:8000/auth/me -H 'Authorization: Bearer YOUR_ACCESS_TOKEN'`.
 19. Give one user access to the active restricted HR-005 version with `curl -X POST http://127.0.0.1:8000/api/admin/documents/HR-005/versions/1.0/grants -H 'Content-Type: application/json' -H 'Authorization: Bearer SOFIA_ADMIN_TOKEN' -d '{"user_id":TARGET_USER_ID}'`. Replace the placeholders with Sofia's access token and a real user ID. Only an administrator can create, list, or revoke grants; `GET` on that same URL lists grants and `DELETE` on the URL ending in `/TARGET_USER_ID` revokes one.
-20. Stop the API with `Ctrl+C`, then stop PostgreSQL and Qdrant with `docker compose down`. Named volumes keep local database and vector data across container restarts.
+20. To read your own synthetic leave balance or list your own IT tickets, ask that in `/api/ask` or `/demo/ask`; each successful tool result is included in the response. HR managers may look up another active user's balance. Other users can only read their own.
+21. To create an IT ticket, send `{"question":"Create an IT ticket for ...","confirm_actions":true}`. This explicitly enables the ticket creation tool for that request; without `confirm_actions:true`, the tool is unavailable. Use a signed-in account for `/api/ask`; demo mode is only a local learning shortcut.
+22. Stop the API with `Ctrl+C`, then stop PostgreSQL and Qdrant with `docker compose down`. Named volumes keep local database and vector data across container restarts.
 
-The `User`, `KnowledgeDocument`, and `KnowledgeDocumentGrant` tables are described in `src/clearance/models.py`, and Alembic migrations under `migrations/` keep database layout changes repeatable. PostgreSQL stores document details, versions, and per-user grants; Qdrant stores searchable text chunks, vectors, and search metadata. Passwords are stored as Argon2 hashes. `POST /auth/login` issues a short-lived signed token; protected routes check that token and load the current active user record from PostgreSQL. Retrieval allows active company documents, same-department documents, and active restricted versions explicitly granted to that user. Admin-only endpoints can list, add, and revoke grants; grants for old document versions do not expose superseded content. Both ask routes use only filtered results to create a structured Groq answer, check citation IDs against retrieved chunks, and abstain when they lack valid evidence. The `X-Demo-User-ID` header remains a local learning shortcut. Specialist tools and the web interface are not implemented yet. Keep credentials in `.env`; never commit API keys or other secrets.
+The table descriptions are in `src/clearance/models.py`, and Alembic migrations under `migrations/` keep database layout changes repeatable. PostgreSQL stores accounts, document details, grants, synthetic leave balances, and IT tickets; Qdrant stores searchable text chunks, vectors, and search metadata. Passwords are stored as Argon2 hashes. `POST /auth/login` issues a short-lived signed token; protected routes check that token and load the current active user record from PostgreSQL. Retrieval allows active company documents, same-department documents, and active restricted versions explicitly granted to that user. Admin-only endpoints can list, add, and revoke grants; grants for old document versions do not expose superseded content. Both ask routes use a LangGraph workflow: it searches only permitted documents, makes employee identity available to MCP tools only from the authenticated server-side user, and returns structured Groq answers with citations checked against retrieved sources. Tool results are checked against the tools actually called. Leave balances are limited to the employee, HR managers, and administrators; ticket lists are limited to the signed-in employee. The ticket creation tool is only registered when `confirm_actions` is true. The `X-Demo-User-ID` header remains a local learning shortcut. The web interface is not implemented yet. Keep credentials in `.env`; never commit API keys or other secrets.
 
 ## Evaluation results
 
@@ -71,7 +74,3 @@ No project evaluation measurements are reported yet. At the evaluation checkpoin
 | Cost per question | Not measured | Pending |
 
 The Groq baseline makes two sample calls at temperatures 0.0 and 0.7. On the development run, both returned the instructed safe fallback for a question with no source text. Their estimated costs were about $0.000038 and $0.000035. A separate live check confirmed that the configured model accepts the strict structured response schema and returns the requested answer and citation ID for supplied synthetic evidence. These checks confirm connectivity and response formatting; they are not an answer-quality evaluation.
-
-## Architecture
-
-An architecture diagram will be added after the end-to-end flow is implemented and verified, so the diagram reflects the actual system rather than a speculative design.

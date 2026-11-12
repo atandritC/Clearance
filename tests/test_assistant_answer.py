@@ -1,9 +1,6 @@
 from types import SimpleNamespace
 
-import pytest
-
 from clearance.assistant import answer
-from clearance.models import User
 
 
 def make_point(point_id: str = "chunk-1") -> SimpleNamespace:
@@ -21,44 +18,25 @@ def make_point(point_id: str = "chunk-1") -> SimpleNamespace:
     )
 
 
-def make_user() -> User:
-    return User(
-        id=2,
-        email="engineer@astervale.example",
-        display_name="Demo Engineer",
-        role="engineer",
-        department="IT Operations",
-        is_active=True,
-    )
-
-
 def test_response_schema_forbids_extra_fields() -> None:
     schema = answer.ANSWER_RESPONSE_FORMAT["json_schema"]["schema"]
 
     assert schema["additionalProperties"] is False
-    assert set(schema["required"]) == {"answer", "citation_ids", "abstain"}
+    assert set(schema["required"]) == {
+        "answer",
+        "citation_ids",
+        "tool_result_ids",
+        "abstain",
+    }
 
 
-@pytest.mark.asyncio
-async def test_answer_question_returns_only_valid_retrieved_citations(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_answer_question_returns_only_valid_retrieved_citations() -> None:
     point = make_point()
-    monkeypatch.setattr(
-        answer,
-        "search_documents",
-        lambda question, user, session: _resolved([point]),
-    )
-    monkeypatch.setattr(
-        answer,
-        "generate_text",
-        lambda *args, **kwargs: _resolved(
-            SimpleNamespace(
-                content='{"answer":"Use the service portal.","citation_ids":["chunk-1"],"abstain":false}'
-            )
-        ),
-    )
-
-    response = await answer.answer_question(
-        "How do I report an incident?", make_user(), object()
+    response = answer._validated_response(
+        "How do I report an incident?",
+        [point],
+        [],
+        '{"answer":"Use the service portal.","citation_ids":["chunk-1"],"tool_result_ids":[],"abstain":false}',
     )
 
     assert response.answer == "Use the service portal."
@@ -67,54 +45,25 @@ async def test_answer_question_returns_only_valid_retrieved_citations(monkeypatc
     assert response.citations[0].document_id == "IT-001"
 
 
-@pytest.mark.asyncio
-async def test_answer_question_abstains_when_search_has_no_allowed_results(monkeypatch: pytest.MonkeyPatch) -> None:
-    called = False
-
-    async def no_results(
-        question: str,
-        user: User,
-        session: object,
-    ) -> list[SimpleNamespace]:
-        return []
-
-    async def model_must_not_be_called(*args: object, **kwargs: object) -> None:
-        nonlocal called
-        called = True
-
-    monkeypatch.setattr(answer, "search_documents", no_results)
-    monkeypatch.setattr(answer, "generate_text", model_must_not_be_called)
-
-    response = await answer.answer_question("What is the policy?", make_user(), object())
-
+def test_answer_abstains_without_any_valid_evidence() -> None:
+    response = answer._validated_response(
+        "What is the policy?",
+        [],
+        [],
+        '{"answer":"A guess.","citation_ids":[],"tool_result_ids":[],"abstain":false}',
+    )
     assert response.abstained is True
     assert response.citations == []
-    assert called is False
 
 
-@pytest.mark.asyncio
-async def test_answer_question_abstains_for_unknown_citation_id(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        answer,
-        "search_documents",
-        lambda question, user, session: _resolved([make_point()]),
+def test_answer_abstains_for_unknown_citation_id() -> None:
+    response = answer._validated_response(
+        "What is the policy?",
+        [make_point()],
+        [],
+        '{"answer":"A made-up answer.","citation_ids":["hidden-chunk"],"tool_result_ids":[],"abstain":false}',
     )
-    monkeypatch.setattr(
-        answer,
-        "generate_text",
-        lambda *args, **kwargs: _resolved(
-            SimpleNamespace(
-                content='{"answer":"A made-up answer.","citation_ids":["hidden-chunk"],"abstain":false}'
-            )
-        ),
-    )
-
-    response = await answer.answer_question("What is the policy?", make_user(), object())
 
     assert response.abstained is True
     assert response.answer == answer.ABSTENTION_TEXT
     assert response.citations == []
-
-
-async def _resolved(value: object) -> object:
-    return value
