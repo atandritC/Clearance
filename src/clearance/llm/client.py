@@ -68,9 +68,44 @@ async def generate_completion(
             request_options["tools"] = tools
             request_options["tool_choice"] = "auto"
 
-        response = await client.chat.completions.create(
-            **request_options,
-        )
+        request_options["stream"] = True
+        request_options["stream_options"] = {"include_usage": True}
+        stream = await client.chat.completions.create(**request_options)
+        content_parts: list[str] = []
+        tool_call_parts: dict[int, dict[str, object]] = {}
+        response_id = ""
+        response_model = settings.groq_model
+        finish_reason = "unknown"
+        usage = None
+
+        async for chunk in stream:
+            response_id = getattr(chunk, "id", None) or response_id
+            response_model = getattr(chunk, "model", None) or response_model
+            if getattr(chunk, "usage", None) is not None:
+                usage = chunk.usage
+            if not chunk.choices:
+                continue
+
+            choice = chunk.choices[0]
+            delta = choice.delta
+            if delta.content:
+                content_parts.append(delta.content)
+            if choice.finish_reason:
+                finish_reason = choice.finish_reason
+            for tool_delta in getattr(delta, "tool_calls", None) or []:
+                index = tool_delta.index
+                accumulated = tool_call_parts.setdefault(
+                    index,
+                    {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
+                )
+                if tool_delta.id:
+                    accumulated["id"] = tool_delta.id
+                function = accumulated["function"]
+                if tool_delta.function:
+                    if tool_delta.function.name:
+                        function["name"] = str(function["name"]) + tool_delta.function.name
+                    if tool_delta.function.arguments:
+                        function["arguments"] = str(function["arguments"]) + tool_delta.function.arguments
     except RateLimitError as error:
         retry_after = error.response.headers.get("retry-after")
         logger.warning("Groq rate limit reached; retry_after=%s", retry_after)
@@ -85,19 +120,11 @@ async def generate_completion(
     finally:
         await client.close()
 
-    if not response.choices:
-        raise LLMProviderError("The model provider returned no answer.")
-
-    choice = response.choices[0]
-    content = choice.message.content or ""
-    tool_calls = [
-        call.model_dump(mode="json", exclude_none=True)
-        for call in (getattr(choice.message, "tool_calls", None) or [])
-    ]
+    content = "".join(content_parts)
+    tool_calls = [tool_call_parts[index] for index in sorted(tool_call_parts)]
     if not content and not tool_calls:
         raise LLMProviderError("The model provider returned an empty answer.")
 
-    usage = response.usage
     prompt_tokens = usage.prompt_tokens if usage else 0
     completion_tokens = usage.completion_tokens if usage else 0
     total_tokens = usage.total_tokens if usage else prompt_tokens + completion_tokens
@@ -109,9 +136,9 @@ async def generate_completion(
 
     result = LLMCallResult(
         content=content,
-        model=response.model or settings.groq_model,
-        request_id=response.id,
-        finish_reason=choice.finish_reason or "unknown",
+        model=response_model,
+        request_id=response_id,
+        finish_reason=finish_reason,
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         total_tokens=total_tokens,

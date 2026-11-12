@@ -6,18 +6,26 @@ import pytest
 from clearance.llm import client as llm_client
 
 
+async def stream_chunks(*chunks: object):
+    for chunk in chunks:
+        yield chunk
+
+
 @pytest.mark.asyncio
 async def test_generate_text_returns_usage_and_estimated_cost(monkeypatch: pytest.MonkeyPatch) -> None:
-    response = SimpleNamespace(
-        choices=[
-            SimpleNamespace(
-                message=SimpleNamespace(content="A grounded answer."),
-                finish_reason="stop",
-            )
-        ],
-        usage=SimpleNamespace(prompt_tokens=100, completion_tokens=20, total_tokens=120),
-        model="openai/gpt-oss-20b",
-        id="request-123",
+    response = stream_chunks(
+        SimpleNamespace(
+            choices=[SimpleNamespace(delta=SimpleNamespace(content="A grounded answer."), finish_reason=None)],
+            usage=None,
+            model="openai/gpt-oss-20b",
+            id="request-123",
+        ),
+        SimpleNamespace(
+            choices=[SimpleNamespace(delta=SimpleNamespace(content=None), finish_reason="stop")],
+            usage=SimpleNamespace(prompt_tokens=100, completion_tokens=20, total_tokens=120),
+            model="openai/gpt-oss-20b",
+            id="request-123",
+        ),
     )
     create = AsyncMock(return_value=response)
     close = AsyncMock()
@@ -42,16 +50,19 @@ async def test_generate_text_returns_usage_and_estimated_cost(monkeypatch: pytes
     assert result.total_tokens == 120
     assert result.estimated_cost_usd == pytest.approx(0.0000135)
     create.assert_awaited_once()
+    assert create.await_args.kwargs["stream"] is True
     close.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_generate_text_rejects_empty_provider_answer(monkeypatch: pytest.MonkeyPatch) -> None:
-    response = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=None), finish_reason="stop")],
-        usage=None,
-        model="openai/gpt-oss-20b",
-        id="request-123",
+    response = stream_chunks(
+        SimpleNamespace(
+            choices=[SimpleNamespace(delta=SimpleNamespace(content=None), finish_reason="stop")],
+            usage=None,
+            model="openai/gpt-oss-20b",
+            id="request-123",
+        )
     )
 
     class FakeGroq:
