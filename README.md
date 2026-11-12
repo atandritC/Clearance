@@ -1,168 +1,219 @@
-# Clearance
+<div align="center">
 
-Clearance is a learning project for a permission-aware company knowledge assistant. It answers questions from a fictional company's internal documents, cites its sources, and limits retrieval and tools using the authenticated user's access.
+<img src="assets/clearance-banner.svg" alt="Clearance — a permission-aware company knowledge assistant" width="100%" />
 
-> **Synthetic data only:** The company and all policies, people, projects, and figures in this repository are fictional. Do not add real company or personal documents.
+<br />
 
-## What the project demonstrates
+[![Open the demo](https://img.shields.io/badge/OPEN_LIVE_DEMO-Clearance-24648A?style=for-the-badge&logo=vercel&logoColor=white)](https://clearance-theta-three.vercel.app/)
+[![Explore the API](https://img.shields.io/badge/API_REFERENCE-Swagger-172C43?style=for-the-badge&logo=fastapi&logoColor=white)](https://clearance-api-nine.vercel.app/docs)
 
-- Retrieval-augmented generation over versioned company documents.
-- Server-side access filters derived from authenticated identity.
-- Role-specific answers with citations and safe abstention.
-- Permission checks inside HR and IT tools exposed through an in-process MCP server.
-- A LangGraph workflow that combines document search with employee-specific tools.
-- Evaluation of retrieval quality, faithfulness, leakage rate, latency, and cost per question.
+<br />
 
-## Learning workflow
+`PYTHON` &nbsp; · &nbsp; `FASTAPI` &nbsp; · &nbsp; `LANGGRAPH` &nbsp; · &nbsp; `QDRANT` &nbsp; · &nbsp; `POSTGRESQL`
 
-The project is built in small, verified steps. This README will be updated at each checkpoint with verified setup instructions, design decisions, and measured results.
+</div>
 
-## Synthetic knowledge base
+<br />
 
-`CLEARANCE_SYNTHETIC_KNOWLEDGE_BASE.md` contains fictional Company, People Operations, IT Operations, Finance, and Product Strategy records. It includes department and restricted material, active and superseded versions, effective dates, and evaluation prompts. The app must use trusted server-side identity to filter this material.
+> **The idea** &nbsp; Ask questions about a fictional company’s internal knowledge base. Clearance retrieves evidence the signed-in employee is allowed to see, answers with citations, and abstains when it cannot support an answer.
 
-## Stack
+## ◈ Explore
 
-Python, FastAPI, Pydantic v2, SQLAlchemy, Alembic, PostgreSQL, Qdrant, FastEmbed, LangGraph, an MCP server, Groq, React + Vite, Nginx, Docker Compose, Vercel, Neon, and Qdrant Cloud.
+<div align="center">
 
-## Setup and run
+| &nbsp;01&nbsp; **The assistant** | &nbsp;02&nbsp; **Access model** | &nbsp;03&nbsp; **Quick start** | &nbsp;04&nbsp; **Evaluation** |
+|:---:|:---:|:---:|:---:|
+| [What it does](#the-assistant) | [How access works](#access-is-part-of-retrieval) | [Run with Docker](#run-the-demo-locally) | [What is measured](#evaluation) |
 
-### Prerequisites
+</div>
 
-- Python 3.14.10 and `uv`
-- Docker Desktop with Docker Compose
-- A Groq API key
+## The assistant
 
-### Run the full app in Docker
+Clearance is a learning project for permission-aware retrieval-augmented generation. It combines a company knowledge base with employee-specific HR and IT tools, while keeping the user’s identity and access checks on the server.
 
-1. Copy `.env.example` to `.env`, then set the PostgreSQL password, Groq API key, and a private random `JWT_SECRET_KEY` (at least 32 characters). Keep `.env` local; Git ignores it, and Docker does not copy it into either image.
-2. Build the API and frontend images and start all four services with `docker compose up -d --build`.
-3. Create or update the database tables with `docker compose exec api uv run --no-sync alembic upgrade head`.
-4. Create or reset the fictional users and balances with `docker compose exec api uv run --no-sync python scripts/seed_demo_users.py`. The script asks for one local demo password and saves only its Argon2 hash for the six demo accounts.
-5. Import document details into PostgreSQL with `docker compose exec api uv run --no-sync python scripts/import_knowledge_metadata.py`.
-6. Create the Qdrant collection and its access-filter indexes with `docker compose exec api uv run --no-sync python scripts/create_qdrant_collection.py`.
-7. Index the source corpus with `docker compose exec api uv run --no-sync python scripts/index_knowledge_base.py`. FastEmbed downloads its model the first time it runs; the corpus currently produces 44 searchable chunks.
-8. Check service state with `docker compose ps`. Open the frontend at `http://127.0.0.1:8080`; the API docs are at `http://127.0.0.1:8000/docs`.
-9. Check the API through the frontend proxy with `curl http://127.0.0.1:8080/health` and `curl http://127.0.0.1:8080/ready`. The first checks that the API responds; the second also checks its PostgreSQL connection.
-10. In demo mode, open the app to switch between fictional users. The API and Nginx containers communicate over Compose's private network; PostgreSQL and Qdrant keep their data in named volumes.
-11. Stop the containers with `docker compose down`. The named database and vector volumes remain for the next start.
+- **Answers with evidence** — responses cite retrieved passages, and citations are checked against the sources returned by search.
+- **Search respects access** — active company documents, same-department documents, and explicitly granted restricted versions are filtered before retrieval results reach the model.
+- **Employee-specific tools** — the assistant can read permitted leave balances and IT tickets. Creating an IT ticket requires `confirm_actions: true` on that request.
+- **Demo and sign-in flows** — use fictional demo identities locally, or authenticate with a password and short-lived bearer token.
+- **Admin grant controls** — administrators can add, list, and revoke access to restricted document versions.
+- **Evaluation scripts** — measure retrieval quality and access-boundary behavior on a synthetic question set; optional answer evaluation makes live Groq calls.
 
-### Run services locally for development
+> **Synthetic data only:** the company, policies, employees, and records in this repository are fictional. Do not add real company or personal documents.
 
-If you previously started the full Docker app, stop its API and frontend containers with `docker compose stop api frontend` before starting the API and Vite directly on your Mac. PostgreSQL and Qdrant can stay running.
+## Access is part of retrieval
 
-1. Install the locked Python dependencies with `uv sync`.
-2. Copy `.env.example` to `.env`, then set the PostgreSQL password, Groq API key, and a private random `JWT_SECRET_KEY` (at least 32 characters). `QDRANT_SCORE_THRESHOLD` defaults to `0.68` and can be adjusted between `0` and `1` to control how close a search result must be before the assistant sees it. Keep `.env` local; it is ignored by Git.
-3. Start only PostgreSQL and Qdrant with `docker compose up -d postgres qdrant`.
-4. Apply the database migrations with `uv run alembic upgrade head`. This creates the user, document, per-user grant, leave-balance, and IT-ticket tables and adds the account security fields.
-5. Add or update the fictional local users and leave balances with `uv run python scripts/seed_demo_users.py`. It asks for one local demo password (at least 12 characters) and saves only its Argon2 hash for all six demo accounts. The Sofia Gigante account is marked as the local knowledge administrator. Run the script again to reset their shared local password and account setup.
-6. Import document details into PostgreSQL with `uv run python scripts/import_knowledge_metadata.py`. The current corpus has 41 document versions.
-7. Create the Qdrant collection and its access-filter indexes with `uv run python scripts/create_qdrant_collection.py`.
-8. Index the source corpus with `uv run python scripts/index_knowledge_base.py`. FastEmbed creates vectors locally; the first run downloads its model. At this checkpoint, the corpus produces 44 searchable chunks.
-9. Run `uv run pytest -q` to check permission filters, password and token handling, answer validation, and Groq usage handling.
-10. Check service state with `docker compose ps`. PostgreSQL is published on `127.0.0.1:5433`; Qdrant is published on `127.0.0.1:6333` (HTTP) and `127.0.0.1:6334` (gRPC).
-11. Start the API with `uv run fastapi dev src/clearance/main.py`. It listens on `http://127.0.0.1:8000` and provides interactive API docs at `/docs`.
-12. Check `curl http://127.0.0.1:8000/health` and `curl http://127.0.0.1:8000/ready`. The first checks that the API responds; the second also checks its Postgres connection.
-13. In demo mode, `GET /demo/users` lists the fictional users, `GET /demo/whoami` accepts the `X-Demo-User-ID` header to select one, and `GET /demo/search` searches the indexed documents for that user. These routes are a local learning shortcut, not production sign-in.
-14. Run `uv run python scripts/groq_baseline.py` to make two short Groq calls and view their answers, token counts, response time, and estimated cost. The results are sample observations, not an answer-quality evaluation.
-15. Ask from the indexed corpus with `curl -X POST http://127.0.0.1:8000/demo/ask -H 'Content-Type: application/json' -H 'X-Demo-User-ID: 2' -d '{"question":"Where should employees report an IT incident?"}'`. This demo route uses filtered search, returns citations only from retrieved chunks, and abstains when it lacks authorized evidence.
-16. Sign in with `curl -X POST http://127.0.0.1:8000/auth/login -H 'Content-Type: application/json' -d '{"email":"mikasa.ackerman@astervale.example","password":"YOUR_LOCAL_DEMO_PASSWORD"}'`. The response contains a short-lived bearer token.
-17. Send an authenticated ask with `curl -X POST http://127.0.0.1:8000/api/ask -H 'Content-Type: application/json' -H 'Authorization: Bearer YOUR_ACCESS_TOKEN' -d '{"question":"Where should employees report an IT incident?"}'`. The API loads the active account from PostgreSQL for each request; it does not trust role or department values from the token or request.
-18. Check the signed-in identity with `curl http://127.0.0.1:8000/auth/me -H 'Authorization: Bearer YOUR_ACCESS_TOKEN'`.
-19. Give one user access to the active restricted HR-005 version with `curl -X POST http://127.0.0.1:8000/api/admin/documents/HR-005/versions/1.0/grants -H 'Content-Type: application/json' -H 'Authorization: Bearer SOFIA_ADMIN_TOKEN' -d '{"user_id":TARGET_USER_ID}'`. Replace the placeholders with Sofia's access token and a real user ID. Only an administrator can create, list, or revoke grants; `GET` on that same URL lists grants and `DELETE` on the URL ending in `/TARGET_USER_ID` revokes one.
-20. To read your own synthetic leave balance or list your own IT tickets, ask that in `/api/ask` or `/demo/ask`; each successful tool result is included in the response. HR managers may look up another active user's balance. Other users can only read their own.
-21. Run retrieval and access checks on the synthetic question set with `uv run python scripts/run_evaluation.py --output reports/generated/evaluation.json`. Grant-dependent cases are skipped when the required active grant is absent. The generated report directory is ignored by Git.
-22. Add `--answers` to also ask Groq to answer each evaluation question and measure abstention accuracy and citation overlap. This makes live model calls and may incur provider charges. Citation overlap is not a semantic faithfulness score.
-23. To create an IT ticket, send `{"question":"Create an IT ticket for ...","confirm_actions":true}`. This explicitly enables the ticket creation tool for that request; without `confirm_actions:true`, the tool is unavailable. Use a signed-in account for `/api/ask`; demo mode is only a local learning shortcut.
-24. In a second terminal, run `cd frontend && npm ci && npm run dev`. Open the Vite address shown in the terminal (usually `http://localhost:5173`). Vite forwards `/demo`, `/auth`, and `/api` requests to the API on port `8000`.
-25. In the app, use the profile menu to switch fictional demo identities or sign in with a password. The theme follows your system appearance by default; a manual theme choice is saved in the browser. The Sources and My requests views show results from the current session. Signed-in administrators see an Admin console for adding and removing restricted-document grants; the API checks administrator access on every change.
-26. Stop the frontend and API with `Ctrl+C` in their terminals, then stop PostgreSQL and Qdrant with `docker compose down`. Named volumes keep local database and vector data across container restarts.
-
-The table descriptions are in `src/clearance/models.py`, and Alembic migrations under `migrations/` keep database layout changes repeatable. PostgreSQL stores accounts, document details, grants, synthetic leave balances, and IT tickets; Qdrant stores searchable text chunks, vectors, and search metadata. Passwords are stored as Argon2 hashes. `POST /auth/login` issues a short-lived signed token; protected routes check that token and load the current active user record from PostgreSQL. Retrieval allows active company documents, same-department documents, and active restricted versions explicitly granted to that user. It also filters out search matches below `QDRANT_SCORE_THRESHOLD`. Admin-only endpoints can list, add, and revoke grants; grants for old document versions do not expose superseded content. Both ask routes use a LangGraph workflow: it searches only permitted documents, makes employee identity available to MCP tools only from the authenticated server-side user, and returns structured Groq answers with citations checked against retrieved sources. Groq responses stream to the API, which rebuilds the complete structured answer before returning it to the browser. Tool results are checked against the tools actually called. Leave balances are limited to the employee, HR managers, and administrators; ticket lists are limited to the signed-in employee. The ticket creation tool is only registered when `confirm_actions` is true. The React interface provides desktop and mobile layouts, light and dark themes, demo identity switching, password sign-in, source details, session request history, and admin document-grant controls. The `X-Demo-User-ID` header remains a local learning shortcut. Keep credentials in `.env`; never commit API keys or other secrets.
-
-## Deployed preview
-
-The public synthetic demo is deployed with [the React frontend](https://clearance-theta-three.vercel.app/) and [the FastAPI service](https://clearance-api-nine.vercel.app/). The API runs on Vercel, PostgreSQL is hosted by Neon in Singapore, and vectors are stored in Qdrant Cloud in São Paulo. The public demo uses only the fictional corpus and demo accounts; do not upload real company or personal data.
-
-### Recreate the hosted setup
-
-1. Create a Neon PostgreSQL project and a Qdrant Cloud cluster. Keep database credentials, the Qdrant API key, the Groq API key, and the JWT secret private.
-2. Connect the repository to Vercel as two projects: set the API project's root directory to the repository root and the website project's root directory to `frontend`. The API uses the root `index.py` entry point and `vercel.json`; the website builds as a Vite app.
-3. Add the API environment variables in Vercel: `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT=5432`, `POSTGRES_SSL=true`, `POSTGRES_POOLER=true`, `GROQ_API_KEY`, `JWT_SECRET_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`, `DEMO_MODE=true`, and `FRONTEND_ORIGINS`. Set `FRONTEND_ORIGINS` to the exact website origin with `https://` and no trailing slash. The deployed API uses Neon's pooled endpoint.
-4. Add `VITE_API_BASE_URL` and `VITE_DEMO_MODE=true` to the website project's Vercel environment. Set the API URL to the API project's public origin. Values beginning with `VITE_` are visible in browser code and must not contain secrets.
-5. For one-time hosted database and vector setup, use a private local environment file such as `.env.hosted` (ignored by Git). Point it to Neon's **direct** endpoint and set `POSTGRES_POOLER=false`; use the Qdrant Cloud endpoint and key. From the repository root, load that file into the current shell, then run the setup commands:
-
-   ```sh
-   set -a
-   source .env.hosted
-   set +a
-   uv run alembic upgrade head
-   uv run python scripts/seed_demo_users.py
-   uv run python scripts/import_knowledge_metadata.py
-   uv run python scripts/create_qdrant_collection.py
-   uv run python scripts/index_knowledge_base.py
-   ```
-
-   The setup creates the PostgreSQL tables and six fictional demo accounts, imports document metadata, creates the `clearance_documents` Qdrant collection and its payload indexes, and uploads the embedded corpus. At this checkpoint, the corpus contains 41 document versions and 44 searchable chunks. The runtime Vercel API switches to Neon's pooled connection settings.
-6. Push the deployment commit to the connected branch and wait for both Vercel projects to report **Ready**. If environment variables change, redeploy the affected project. The API's `FRONTEND_ORIGINS` must match the website origin exactly.
-7. Verify the API at `/health`, `/ready`, and `/demo/users`, then ask a question in the website as an authorized fictional user. A safe abstention is expected when the selected user's access does not include a relevant source.
-
-Vercel's deployed files are read-only, so the API puts FastEmbed and Hugging Face model caches under `/tmp`. A fresh serverless instance can download the model again, making its first search slower. The local Docker Compose setup remains available for development and runs PostgreSQL, Qdrant, the API, and the frontend together.
-
-## Evaluation results
-
-The versioned question set is `evaluation/golden_questions.json`. After the database, demo users, document metadata, and Qdrant index are ready, run `uv run python scripts/run_evaluation.py --output reports/generated/evaluation.json` for retrieval and access-boundary measurements. It reports document precision and recall at top-k, first relevant document rank, and access leakage. Add `--answers` to make live Groq calls and measure abstention accuracy and citation overlap. Grant-dependent cases are skipped unless the user has the required active document grant. Reports are local and ignored by Git. No results are claimed until the runner is used against the local services. Citation overlap does not measure whether the answer's meaning is fully supported; semantic faithfulness still needs human review.
-
-Record real values with their test-set size and method:
-
-| Metric | Result | Dataset / method |
-|---|---:|---|
-| Document precision at top 5 | 0.875 | 7 measured cases; one grant-required case skipped; synthetic set |
-| Document recall at top 5 | 1.000 | Same run; score threshold 0.68 |
-| Faithfulness | Not measured | Pending |
-| Access leakage cases | 0 / 7 | Synthetic access-boundary cases; one case skipped |
-| p50 / p95 latency | Not measured | Pending |
-| Cost per question | Not measured | Pending |
-
-The Groq baseline makes two sample calls at temperatures 0.0 and 0.7. On the development run, both returned the instructed safe fallback for a question with no source text. Their estimated costs were about $0.000038 and $0.000035. A separate live check confirmed that the configured model accepts the strict structured response schema and returns the requested answer and citation ID for supplied synthetic evidence. These checks confirm connectivity and response formatting; they are not an answer-quality evaluation. The retrieval result above is a small smoke evaluation, not evidence of production quality or zero leakage risk.
-
-## RAG request and indexing flow
-
-Clearance has two RAG paths. During indexing, it reads the synthetic Markdown corpus, stores document/version metadata in PostgreSQL, splits document text into chunks, embeds each chunk with FastEmbed, and stores its vector, text, and access metadata in Qdrant. During a question, the API loads the user's identity and grants from PostgreSQL, embeds the question, and searches Qdrant with a server-built filter for active company, same-department, and explicitly granted content. LangGraph can use permission-checked HR or IT tools. Groq streams a structured draft back to the API; the API validates its citations and tool-result IDs and returns the answer or a safe abstention.
+Clearance derives identity from the authenticated account, then applies document visibility rules inside the API. Role, department, and grants supplied by a browser request are not used to construct the access filter. The model only receives passages retrieved for that user.
 
 ```mermaid
-flowchart TB
-  subgraph Indexing[Knowledge base indexing]
-    MD["Synthetic Markdown corpus"] --> PARSE["Parse documents and metadata"]
-    PARSE -->|"Document versions and ownership"| PG[("PostgreSQL")]
-    PARSE --> CHUNK["Split text into searchable chunks"]
-    CHUNK --> EMBED["FastEmbed creates vectors"]
-    EMBED --> QDRANT[("Qdrant: vectors, text, and access metadata")]
-  end
-
-  subgraph Asking[Permission-aware question answering]
-    USER["Employee question"] --> API["React UI → FastAPI"]
-    API --> IDENTITY["Load trusted user and active grants"]
-    IDENTITY <--> PG
-    API --> QEMBED["Embed question with FastEmbed"]
-    IDENTITY --> FILTER["Build active, company, department, and grant filter"]
-    QEMBED --> SEARCH["Search Qdrant for top matches"]
-    FILTER --> SEARCH
-    QDRANT --> SEARCH
-    SEARCH --> EVIDENCE["Authorized source passages"]
-    IDENTITY --> GRAPH["LangGraph workflow"]
-    EVIDENCE --> GRAPH
-    GRAPH --> ROUTER["Groq chooses whether a tool is needed"]
-    ROUTER -->|"HR or IT request"| MCP["Permission-checked MCP tool"]
-    MCP <--> PG
-    MCP --> TOOLRESULT["Trusted tool result"]
-    TOOLRESULT --> GRAPH
-    ROUTER --> COMPOSE["Groq streams a structured answer"]
-    GRAPH --> COMPOSE
-    COMPOSE --> VALIDATE["Validate citations and tool-result IDs"]
-    VALIDATE -->|"Supported"| ANSWER["Answer with citations"]
-    VALIDATE -->|"Missing or invalid evidence"| ABSTAIN["Safe abstention"]
-    ANSWER --> API
-    ABSTAIN --> API
-  end
+flowchart LR
+  EMP[Employee] --> API[FastAPI]
+  API --> ID[Load active account and grants]
+  ID <--> PG[(PostgreSQL)]
+  API --> FILTER[Build server-side access filter]
+  FILTER --> Q[(Qdrant search)]
+  Q --> EVIDENCE[Authorized passages]
+  ID --> FLOW[LangGraph assistant]
+  EVIDENCE --> FLOW
+  FLOW <--> TOOLS[Permission-checked HR / IT tools]
+  TOOLS <--> PG
+  FLOW --> LLM[Groq structured response]
+  LLM --> CHECK[Validate citations and tool results]
+  CHECK --> ANSWER[Answer or safe abstention]
 ```
+
+### What the access rules allow
+
+| Content or action | Who can access it |
+|---|---|
+| Active company-wide documents | All active users |
+| Active department documents | Active users in that department |
+| Active restricted document versions | Users with a grant for that exact version; administrators manage grants |
+| Leave balance | The employee; HR managers and administrators can look up another active user |
+| IT ticket list | The signed-in employee |
+| Create an IT ticket | Only when the request explicitly sets `confirm_actions: true` |
+
+The local `X-Demo-User-ID` flow is a learning shortcut, not production authentication. Demo routes are disabled when `DEMO_MODE` is false.
+
+## Run the demo locally
+
+### Requirements
+
+- Docker Desktop with Docker Compose
+- Python 3.14.10 and [`uv`](https://docs.astral.sh/uv/) for local development outside Docker
+- A [Groq API key](https://console.groq.com/keys)
+
+### Start the full app
+
+1. Create a local environment file and set a database password, Groq key, and private JWT secret of at least 32 characters:
+
+   ```sh
+   cp .env.example .env
+   ```
+
+2. Build and start PostgreSQL, Qdrant, the API, and the web app:
+
+   ```sh
+   docker compose up -d --build
+   ```
+
+3. Prepare the database, fictional users, and search index:
+
+   ```sh
+   docker compose exec api uv run --no-sync alembic upgrade head
+   docker compose exec api uv run --no-sync python scripts/seed_demo_users.py
+   docker compose exec api uv run --no-sync python scripts/import_knowledge_metadata.py
+   docker compose exec api uv run --no-sync python scripts/create_qdrant_collection.py
+   docker compose exec api uv run --no-sync python scripts/index_knowledge_base.py
+   ```
+
+   The seed script asks for one local demo password and stores its Argon2 hash for six fictional accounts. The current corpus has 41 document versions and indexes to 44 searchable chunks. FastEmbed downloads its embedding model on first indexing.
+
+4. Open the app and API:
+
+   - Web app: <http://127.0.0.1:8080>
+   - API docs: <http://127.0.0.1:8000/docs>
+   - Liveness: <http://127.0.0.1:8000/health>
+   - Database readiness: <http://127.0.0.1:8000/ready>
+
+Stop the containers with `docker compose down`. Named volumes preserve PostgreSQL and Qdrant data across restarts. The `.env` file is ignored by Git; keep credentials there and never commit them.
+
+### Run the API and Vite separately
+
+Use Docker for PostgreSQL and Qdrant, then install and prepare the API from the repository root:
+
+```sh
+uv sync
+cp .env.example .env
+docker compose up -d postgres qdrant
+uv run alembic upgrade head
+uv run python scripts/seed_demo_users.py
+uv run python scripts/import_knowledge_metadata.py
+uv run python scripts/create_qdrant_collection.py
+uv run python scripts/index_knowledge_base.py
+uv run fastapi dev src/clearance/main.py
+```
+
+In another terminal, run the frontend:
+
+```sh
+cd frontend
+npm ci
+npm run dev
+```
+
+Vite prints the local URL and forwards `/demo`, `/auth`, and `/api` requests to the API. If you switch from the full Compose app to local API/Vite, stop its `api` and `frontend` services first with `docker compose stop api frontend`.
+
+## API at a glance
+
+The interactive reference is available at `/docs` when the API is running.
+
+| Route | Purpose |
+|---|---|
+| `POST /auth/login` | Verify credentials and issue a short-lived bearer token |
+| `GET /auth/me` | Return the active signed-in user |
+| `POST /api/ask` | Ask as the authenticated user |
+| `POST /demo/ask` | Ask using the local demo identity header |
+| `GET /demo/users` | List fictional users when demo mode is enabled |
+| `GET /demo/search?question=...` | Inspect permission-filtered search results |
+| `/api/admin/documents/{id}/versions/{version}/grants` | List, add, or revoke version-specific grants (admin only) |
+| `GET /health` · `GET /ready` | Check API liveness and database readiness |
+
+## Evaluation
+
+Run retrieval and access checks after the local database, demo users, document metadata, and Qdrant collection are ready:
+
+```sh
+uv run python scripts/run_evaluation.py --output reports/generated/evaluation.json
+```
+
+Add `--answers` to make live Groq calls and measure abstention accuracy and citation overlap; those calls may incur provider charges. Grant-dependent cases are skipped if the required grant is missing. Citation overlap is not a semantic faithfulness score, and the small synthetic question set is not evidence of production quality or zero leakage risk.
+
+The checked-in evaluation snapshot reports:
+
+| Metric | Result | Context |
+|---|---:|---|
+| Document precision at top 5 | 0.875 | 7 measured cases; one grant-required case skipped |
+| Document recall at top 5 | 1.000 | Same run; score threshold 0.68 |
+| Access leakage cases | 0 / 7 | Synthetic boundary cases; one case skipped |
+| Faithfulness | Not measured | Requires semantic review |
+| p50 / p95 latency | Not measured | — |
+| Cost per question | Not measured | — |
+
+These values are a small smoke evaluation against synthetic data. Re-run the scripts against your configured services before drawing conclusions; the generated report is local and ignored by Git.
+
+## Deployment
+
+The public demo uses the fictional corpus only:
+
+- [Clearance web app](https://clearance-theta-three.vercel.app/)
+- [FastAPI service](https://clearance-api-nine.vercel.app/)
+
+The hosted setup uses Vercel for the frontend and API, Neon for PostgreSQL, and Qdrant Cloud for vectors. For the API project, set `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT=5432`, `POSTGRES_SSL=true`, `POSTGRES_POOLER=true`, `GROQ_API_KEY`, `JWT_SECRET_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`, `DEMO_MODE=true`, and `FRONTEND_ORIGINS` to the exact frontend origin. For the frontend project, set `VITE_API_BASE_URL` to the API origin and `VITE_DEMO_MODE=true`. Values starting with `VITE_` are public browser settings; never put secrets in them.
+
+For the one-time hosted data setup, use a private local env file such as `.env.hosted` (ignored by Git) with the hosted database and Qdrant credentials. Point it at Neon's **direct** endpoint and set `POSTGRES_POOLER=false` for migrations. Then run `uv run alembic upgrade head`, `uv run python scripts/seed_demo_users.py`, `uv run python scripts/import_knowledge_metadata.py`, `uv run python scripts/create_qdrant_collection.py`, and `uv run python scripts/index_knowledge_base.py`. See `.env.example`, `vercel.json`, and `frontend/` for the remaining project configuration.
+
+## Built with
+
+**API and assistant:** Python 3.14 · FastAPI · Pydantic · SQLAlchemy · Alembic · LangGraph · MCP · Groq<br />
+**Data and retrieval:** PostgreSQL · Qdrant · FastEmbed<br />
+**Web and delivery:** React · Vite · Nginx · Docker Compose · Vercel
+
+## Repository map
+
+```text
+src/clearance/       API, auth, retrieval, assistant workflow, and tools
+frontend/            Vite web app
+migrations/          Alembic database migrations
+scripts/             Demo setup, indexing, and evaluation commands
+evaluation/          Synthetic golden questions
+CLEARANCE_SYNTHETIC_KNOWLEDGE_BASE.md
+                     Fictional source documents used by the demo
+```
+
+---
+
+<div align="center">
+
+**Clearance** · A learning project in trustworthy, permission-aware AI search.
+
+</div>
