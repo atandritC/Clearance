@@ -215,10 +215,18 @@ The checked-in evaluation snapshot reports:
 | Document recall at top 5 | 1.000 | Same run; score threshold 0.68 |
 | Access leakage cases | 0 / 7 | Synthetic boundary cases; one case skipped |
 | Faithfulness | Not measured | Requires semantic review |
-| p50 / p95 latency | Not measured | — |
-| Cost per question | Not measured | — |
+| p50 / p95 latency | Not measured by this retrieval evaluation | See live snapshot below |
+| Cost per question | Not measured by this retrieval evaluation | See live snapshot below |
 
 These values are a small smoke evaluation against synthetic data. Re-run the scripts against your configured services before drawing conclusions; the generated report is local and ignored by Git.
+
+## Live demo performance snapshot
+
+On 2026-11-17, 20 sequential requests were sent to the deployed `POST /demo/ask` API as the fictional Mikasa Ackerman (IT Operations) account, using a mix of IT, company-wide, and other-department questions. Nineteen returned HTTP 200 and one returned HTTP 500. End-to-end latency for the 19 successful responses was **5.054 seconds p50** and **14.525 seconds p95** (linear-interpolated percentiles); the first response took 19.5 seconds. Latency includes the caller-to-Vercel round trip, retrieval, model calls, and response generation. The failed request is excluded from these latency percentiles, so the 19/20 result is shown alongside them. A separate retry of the failed question returned HTTP 200 in 18.795 seconds; this suggests an intermittent failure but does not identify its cause.
+
+For cost, the same 20 questions were replayed through the local `answer_question()` flow using the hosted Neon and Qdrant data and the configured Groq model. All 20 completed and made 32 Groq calls, using 27,352 reported tokens in total. The app's token-based pricing estimate was **$0.000223 per question on average** (**$0.004465 total**). This is an estimate from provider-reported token usage and the configured input/output prices, not an invoice amount; it covers Groq only, not Vercel, Neon, or Qdrant. The cost replay was local, so these figures are a matched assistant-flow estimate rather than per-request cost logs from the deployed Vercel functions.
+
+This is a small smoke sample, not a production service-level measurement. Several questions were outside the selected user's access and correctly abstained. The one HTTP 500 is included in the result count and should be investigated before treating this snapshot as a reliability baseline. Results can vary with cold starts, model/provider load, question length, and tool usage.
 
 ## Deployment
 
